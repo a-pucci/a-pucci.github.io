@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Finanze</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg:       #0f0f0f;
+    --surface:  #181818;
+    --surface2: #222222;
+    --border:   rgba(255,255,255,0.08);
+    --border2:  rgba(255,255,255,0.14);
+    --text:     #f0ede8;
+    --muted:    #888680;
+    --hint:     #504e4b;
+    --accent:   #c9f542;
+    --accent-bg:rgba(201,245,66,0.08);
+    --red:      #ff6b6b;
+    --red-bg:   rgba(255,107,107,0.1);
+    --green:    #6bcb8b;
+    --green-bg: rgba(107,203,139,0.1);
+    --blue:     #6ba8ff;
+    --blue-bg:  rgba(107,168,255,0.1);
+    --amber:    #ffb347;
+    --amber-bg: rgba(255,179,71,0.1);
+    --radius:   10px;
+    --radius-sm:6px;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+
+  /* ── MOBILE OPTIMIZATIONS ── */
+  @media(max-width:600px) {
+    #app { padding: 1rem .75rem 6rem; }
+    .header h1 { font-size: 12px; }
+    .status-pill { font-size: 10px; padding: 3px 8px; }
+
+    /* Nav fisso in basso su mobile */
+    .nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      margin: 0; border-radius: 0; border: none;
+      border-top: 1px solid var(--border2);
+      background: var(--surface);
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+      z-index: 100; gap: 0;
+    }
+    .nav button {
+      flex: 1; flex-direction: column; gap: 3px;
+      padding: 6px 2px; font-size: 10px; border: none;
+      border-radius: var(--radius-sm); background: transparent;
+    }
+    .nav button span { display: block; font-size: 10px; }
+    .nav button i { font-size: 20px; }
+    .nav button.active { background: var(--surface2); }
+
+    /* Totale mese in cima su mobile */
+    .mobile-summary {
+      display: flex; gap: 10px; margin-bottom: 1rem;
+    }
+
+    /* Quick add più grande e touch-friendly */
+    .amount-row input[type=number] { font-size: 42px; width: 200px; }
+    .amount-row .euro { font-size: 42px; }
+    .selects-row select { min-height: 44px; font-size: 16px; }
+    input, select { min-height: 44px; font-size: 16px; }
+    .btn-primary { min-height: 52px; font-size: 16px; margin-top: 16px; border-radius: var(--radius); }
+
+    /* Nascondi grafici su mobile per velocità */
+    .mobile-hide { display: none !important; }
+
+    /* Card più compatta */
+    .card { padding: .85rem 1rem; }
+    .card-title { margin-bottom: .75rem; }
+  }
+
+  /* Desktop: mobile-summary nascosta */
+  @media(min-width:601px) {
+    .mobile-summary { display: none; }
+  }
+
+  /* ── MAIN LAYOUT ── */
+  #app { display: block; max-width: 860px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  /* ── HEADER ── */
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+  .header h1 { font-family: var(--mono); font-size: 14px; font-weight: 400; color: var(--muted); letter-spacing: .06em; }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .dot.loading { background: var(--amber); animation: pulse 1s infinite; }
+  .dot.error   { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── NAV ── */
+  .nav {
+    display: flex; gap: 2px; margin-bottom: 2rem;
+    background: var(--surface); border-radius: var(--radius);
+    padding: 4px; border: 1px solid var(--border);
+  }
+  .nav button {
+    flex: 1; padding: 8px 4px; border-radius: var(--radius-sm);
+    border: none; background: transparent; color: var(--muted);
+    font-family: var(--sans); font-size: 12px; cursor: pointer;
+    transition: all .15s; display: flex; align-items: center;
+    justify-content: center; gap: 5px; white-space: nowrap;
+  }
+  .nav button i { font-size: 15px; }
+  .nav button:hover { color: var(--text); }
+  .nav button.active { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); }
+  @media(max-width:520px) { .nav button span { display: none; } .nav button { flex: none; padding: 8px 12px; } }
+
+  /* ── SECTIONS ── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── METRICS ── */
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: .9rem 1rem;
+  }
+  .metric .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing:.03em; }
+  .metric .value { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
+  .metric .delta { font-size: 11px; margin-top: 4px; font-family: var(--mono); }
+  .up { color: var(--green); } .dn { color: var(--red); }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.1rem 1.25rem; margin-bottom: 1rem;
+  }
+  .card-title {
+    font-size: 10px; font-weight: 500; color: var(--hint);
+    text-transform: uppercase; letter-spacing: .1em; margin-bottom: 1rem;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media(max-width:540px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ── ROWS ── */
+  .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .name { color: var(--text); }
+  .row .sub  { font-size: 11px; color: var(--hint); margin-top: 2px; }
+  .row .amt  { font-family: var(--mono); font-weight: 500; color: var(--text); }
+
+  /* ── QUICK ADD ── */
+  .amount-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 1rem; }
+  .amount-row .euro { font-family: var(--mono); font-size: 32px; font-weight: 300; color: var(--hint); }
+  .amount-row input[type=number] {
+    font-family: var(--mono); font-size: 32px; font-weight: 300;
+    background: transparent; border: none; color: var(--text); width: 180px;
+    border-bottom: 1.5px solid var(--border2); padding: 0 4px 2px;
+  }
+  .amount-row input[type=number]:focus { outline: none; border-bottom-color: var(--accent); }
+  .amount-row input[type=number]::placeholder { color: var(--hint); }
+
+  .selects-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .selects-row select { flex: 1; min-width: 130px; }
+
+  /* ── FORMS ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media(max-width:480px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-row { display: flex; flex-direction: column; gap: 5px; }
+  .form-row label { font-size: 11px; color: var(--muted); letter-spacing: .03em; }
+
+  /* ── INPUTS ── */
+  input, select, textarea {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-family: var(--sans); font-size: 14px;
+    padding: 8px 10px; width: 100%;
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input[type=color] { padding: 3px 6px; height: 36px; cursor: pointer; }
+  select option { background: var(--surface2); }
+
+  /* ── BUTTONS ── */
+  .btn-primary {
+    width: 100%; padding: 11px; margin-top: 10px;
+    background: var(--accent); color: #0f0f0f;
+    border: none; border-radius: var(--radius); font-family: var(--sans);
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: opacity .15s;
+  }
+  .btn-primary:hover { opacity: .88; }
+  .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-secondary {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border: 1px solid var(--border2);
+    border-radius: var(--radius-sm); background: transparent;
+    color: var(--muted); font-size: 13px; cursor: pointer; margin-top: 8px;
+    transition: all .15s;
+  }
+  .btn-secondary:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
+
+  /* ── MESSAGES ── */
+  .msg { border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; margin-top: 8px; display: none; }
+  .msg.ok  { background: var(--green-bg); color: var(--green); }
+  .msg.err { background: var(--red-bg);   color: var(--red); }
+
+  /* ── ACCORDION ── */
+  .acc-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; cursor: pointer; user-select: none;
+  }
+  .acc-header .acc-name {
+    font-size: 14px; font-weight: 400; color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .acc-body { overflow: hidden; max-height: 0; transition: max-height .25s ease; padding-left: 22px; }
+  .acc-body.open { max-height: 600px; }
+  .acc-sub {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px;
+  }
+  .cat-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+
+  /* ── BADGES ── */
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-family: var(--mono); }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-red   { background: var(--red-bg);   color: var(--red); }
+  .badge-blue  { background: var(--blue-bg);  color: var(--blue); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+
+  /* ── VIEW TOGGLE ── */
+  .view-toggle { display: flex; gap: 4px; margin-bottom: 1rem; }
+  .view-toggle button {
+    padding: 5px 12px; font-size: 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); cursor: pointer; transition: all .15s;
+  }
+  .view-toggle button.active { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+
+  /* ── MONTH NAV ── */
+  .month-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 1.25rem; }
+  .month-nav button {
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .month-nav button:hover { border-color: var(--border2); color: var(--text); }
+  .month-nav span { font-family: var(--mono); font-size: 13px; color: var(--text); }
+
+  /* ── EMPTY / SKELETON ── */
+  .empty { text-align: center; padding: 2rem 1rem; color: var(--hint); font-size: 13px; }
+  .skel { background: var(--surface2); border-radius: 4px; animation: pulse 1.2s infinite; }
+
+  /* ── URL BOX ── */
+  .url-box {
+    font-family: var(--mono); font-size: 11px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 8px 10px; color: var(--muted); word-break: break-all;
+    margin-top: 6px; line-height: 1.6;
+  }
+
+  /* ── PROGRESS ── */
+  .prog-bar { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 2px; }
+
+  /* ── SPINNER ── */
+  .spinner {
+    width: 15px; height: 15px; border: 2px solid rgba(15,15,15,.3);
+    border-top-color: #0f0f0f; border-radius: 50%;
+    animation: spin .7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── DONUT LEGEND ── */
+  .donut-wrap { display: flex; align-items: center; gap: 1.5rem; }
+  .donut-wrap canvas { flex-shrink: 0; }
+  .leg { flex: 1; }
+  .leg-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 4px 0; }
+  .leg-label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .leg-val { font-family: var(--mono); color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- APP -->
+<div id="app">
+  <div class="header">
+    <h1>FINANZE /</h1>
+    <div class="status-pill">
+      <div class="dot loading" id="sdot"></div>
+      <span id="stxt">connessione...</span>
+      <button onclick="reloadAll()" style="background:none;border:none;cursor:pointer;color:var(--muted);margin-left:4px;font-size:14px;padding:0" title="Ricarica"><i class="ti ti-refresh"></i></button>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="active" onclick="showTab('panoramica',this)"><i class="ti ti-layout-dashboard"></i><span>Panoramica</span></button>
+    <button onclick="showTab('spese',this)"><i class="ti ti-wallet"></i><span>Spese</span></button>
+    <button onclick="showTab('investimenti',this)"><i class="ti ti-trending-up"></i><span>Investimenti</span></button>
+    <button onclick="showTab('budget',this)"><i class="ti ti-chart-bar"></i><span>Budget</span></button>
+    <button onclick="showTab('entrate',this)"><i class="ti ti-plus"></i><span>Entrate</span></button>
+    <button onclick="showTab('impostazioni',this)"><i class="ti ti-settings"></i><span>Impostazioni</span></button>
+  </nav>
+
+  <!-- ── PANORAMICA ── -->
+  <div id="tab-panoramica" class="section active">
+    <div class="metric-grid" id="pan-metrics">
+      <div class="metric"><div class="label">Patrimonio totale</div><div class="skel" style="height:26px;width:80%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Investimenti</div><div class="skel" style="height:26px;width:70%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Liquidità</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Spese mese</div><div class="skel" style="height:26px;width:70%;margin-top:6px"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Allocazione</div>
+        <div class="donut-wrap">
+          <canvas id="donutChart" width="100" height="100" role="img" aria-label="Allocazione patrimonio">Caricamento</canvas>
+          <div class="leg" id="donut-legend"><div class="skel" style="height:60px"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Conti & piattaforme</div>
+        <div id="conti-list"><div class="skel" style="height:80px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SPESE ── -->
+  <div id="tab-spese" class="section">
+    <div class="month-nav">
+      <button onclick="changeMonth(-1)">‹</button>
+      <span id="month-label">— —</span>
+      <button onclick="changeMonth(1)">›</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Aggiungi spesa rapida</div>
+      <div class="amount-row">
+        <span class="euro">€</span>
+        <input type="number" id="q-amount" placeholder="0,00" step="0.01" inputmode="decimal" />
+      </div>
+      <div class="selects-row">
+        <select id="q-cat" onchange="updateSubcats()"><option value="">Categoria...</option></select>
+        <select id="q-subcat"><option value="">Sottocategoria...</option></select>
+      </div>
+      <input type="text" id="q-note" placeholder="Nota (opzionale)" style="margin-bottom:8px" />
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
+        <input type="date" id="q-date" style="flex:1;min-height:36px;font-size:14px" />
+      </div>
+      <button class="btn-primary" id="save-btn" onclick="addSpesa()">
+        <i class="ti ti-check"></i> Salva spesa
+      </button>
+      <div class="msg ok" id="spesa-ok">Spesa salvata su Google Sheets</div>
+      <div class="msg err" id="spesa-err"></div>
+    </div>
+
+    <div class="metric-grid" id="spese-metrics">
+      <div class="metric"><div class="label">Spese totali</div><div class="skel" style="height:26px;width:80%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Transazioni</div><div class="skel" style="height:26px;width:60%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Media</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
+    </div>
+
+    <div class="view-toggle">
+      <button class="active" onclick="setView('cat',this)">Categoria</button>
+      <button onclick="setView('subcat',this)">Sottocategoria</button>
+      <button onclick="setView('list',this)">Lista</button>
+    </div>
+
+    <div id="view-cat" class="card">
+      <div class="card-title">Per categoria — <span id="view-cat-month"></span></div>
+      <div id="cat-accordion"><div class="empty">Caricamento...</div></div>
+    </div>
+    <div id="view-subcat" class="card" style="display:none">
+      <div class="card-title">Per sottocategoria</div>
+      <div id="subcat-flat"><div class="empty">Caricamento...</div></div>
+    </div>
+    <div id="view-list" class="card" style="display:none">
+      <div class="card-title">Movimenti recenti</div>
+      <div id="tx-list"><div class="empty">Caricamento...</div></div>
+    </div>
+
+    <div class="two-col mobile-hide">
+      <div class="card"><div class="card-title">Distribuzione</div>
+        <div style="position:relative;height:190px"><canvas id="spesaChart" role="img" aria-label="Distribuzione spese">Caricamento</canvas></div>
+      </div>
+      <div class="card"><div class="card-title">Trend mensile</div>
+        <div style="position:relative;height:190px"><canvas id="trendChart" role="img" aria-label="Trend mensile">Caricamento</canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── INVESTIMENTI ── -->
+  <div id="tab-investimenti" class="section">
+    <div class="metric-grid" id="inv-metrics">
+      <div class="metric"><div class="label">Totale portafogli</div><div class="skel" style="height:26px;width:75%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Rendimento</div><div class="skel" style="height:26px;width:60%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Capitale investito</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-plus" style="font-size:12px"></i> Nuovo snapshot</div>
+      <div style="font-size:12px;color:var(--hint);margin-bottom:1rem;line-height:1.6">
+        Apri l'app, guarda il totale e inseriscilo qui. Ci vogliono 10 secondi.
+      </div>
+
+      <div style="margin-bottom:1rem">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:.03em">PIATTAFORMA</div>
+        <div id="piatt-buttons" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+
+      <div class="amount-row">
+        <span class="euro">€</span>
+        <input type="number" id="inv-valore" placeholder="0,00" step="0.01" inputmode="decimal" />
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <div class="form-row">
+          <label>Capitale investito (€)</label>
+          <input type="number" id="inv-investito" placeholder="opzionale" step="0.01" />
+        </div>
+        <div class="form-row">
+          <label>Data</label>
+          <input type="date" id="inv-data" />
+        </div>
+      </div>
+
+      <button class="btn-primary" id="save-inv-btn" onclick="addInvestimento()">
+        <i class="ti ti-check"></i> Salva snapshot
+      </button>
+      <div class="msg ok" id="inv-ok">Snapshot salvato</div>
+      <div class="msg err" id="inv-err"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Andamento per piattaforma</div>
+      <div id="inv-chart-wrap" style="position:relative;height:220px">
+        <canvas id="invChart" role="img" aria-label="Andamento investimenti">Caricamento</canvas>
+      </div>
+      <div id="inv-chart-legend" style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--muted);flex-wrap:wrap"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Ultimi snapshot</div>
+      <div id="inv-list"><div class="empty">Nessun dato ancora — aggiungi il primo snapshot</div></div>
+    </div>
+  </div>
+
+  <!-- ── BUDGET ── -->
+  <div id="tab-budget" class="section">
+    <div class="month-nav">
+      <button onclick="changeBudgetMonth(-1)">‹</button>
+      <span id="budget-month-label">— —</span>
+      <button onclick="changeBudgetMonth(1)">›</button>
+    </div>
+
+    <div class="metric-grid" id="budget-metrics">
+      <div class="metric"><div class="label">Budget totale</div><div class="skel" style="height:26px;width:75%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Speso</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Rimanente</div><div class="skel" style="height:26px;width:60%;margin-top:6px"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Budget vs reale — <span id="budget-month-label2"></span></div>
+      <div style="position:relative;height:260px"><canvas id="budgetChart" role="img" aria-label="Budget vs reale">Caricamento</canvas></div>
+      <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--muted)">
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.15)"></span>Budget</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--accent)"></span>Reale</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Imposta budget — <span id="budget-edit-month-label"></span></div>
+      <div style="font-size:12px;color:var(--hint);margin-bottom:1rem;line-height:1.6">
+        Modifica i valori e clicca Salva. Le categorie vengono da <strong style="color:var(--muted)">Finanza/Categorie</strong> su Drive.
+      </div>
+      <div id="budget-edit-form">
+        <div class="empty">Caricamento categorie...</div>
+      </div>
+      <button class="btn-primary" id="save-budget-btn" onclick="saveBudget()" style="margin-top:1rem">
+        <i class="ti ti-check"></i> Salva budget su Google Sheets
+      </button>
+      <div class="msg ok" id="budget-ok">Budget salvato</div>
+      <div class="msg err" id="budget-err"></div>
+    </div>
+  </div>
+
+
+  <!-- ── ENTRATE ── -->
+  <div id="tab-entrate" class="section">
+    <div class="month-nav">
+      <button onclick="changeMonthEntrate(-1)">‹</button>
+      <span id="entrate-month-label">— —</span>
+      <button onclick="changeMonthEntrate(1)">›</button>
+    </div>
+
+    <div class="metric-grid" id="entrate-metrics">
+      <div class="metric"><div class="label">Entrate totali</div><div class="skel" style="height:26px;width:80%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Spese</div><div class="skel" style="height:26px;width:70%;margin-top:6px"></div></div>
+      <div class="metric"><div class="label">Risparmio</div><div class="skel" style="height:26px;width:60%;margin-top:6px"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-plus" style="font-size:12px"></i> Aggiungi entrata</div>
+      <div class="amount-row">
+        <span class="euro">€</span>
+        <input type="number" id="e-amount" placeholder="0,00" step="0.01" inputmode="decimal" />
+      </div>
+      <div class="selects-row">
+        <select id="e-tipo">
+          <option value="">Tipo...</option>
+          <option>Stipendio</option>
+          <option>Freelance</option>
+          <option>Bonus</option>
+          <option>Dividendi</option>
+          <option>Rimborso</option>
+          <option>Regalo</option>
+          <option>Altro</option>
+        </select>
+        <select id="e-conto">
+          <option value="">Conto...</option>
+        </select>
+      </div>
+      <input type="text" id="e-note" placeholder="Nota (opzionale)" style="margin-bottom:8px;margin-top:8px" />
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
+        <input type="date" id="e-date" style="flex:1;min-height:36px;font-size:14px" />
+      </div>
+      <button class="btn-primary" id="save-entrata-btn" onclick="addEntrata()">
+        <i class="ti ti-check"></i> Salva entrata
+      </button>
+      <div class="msg ok" id="entrata-ok">Entrata salvata su Google Sheets</div>
+      <div class="msg err" id="entrata-err"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Movimenti recenti</div>
+      <div id="entrate-list"><div class="empty">Nessuna entrata questo mese</div></div>
+    </div>
+  </div>
+
+  <!-- ── IMPOSTAZIONI ── -->
+  <div id="tab-impostazioni" class="section">
+    <div class="card">
+      <div class="card-title">Connessione Google Sheets</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px">URL App Script attivo</div>
+      <div class="url-box" id="api-url-display"></div>
+      <button class="btn-secondary" onclick="reloadAll()"><i class="ti ti-refresh"></i> Ricarica dati</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Aggiungi categoria / sottocategoria</div>
+      <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
+        La fonte di verità è <strong style="color:var(--muted)">Finanza/Categorie</strong> su Drive.<br>
+        Aggiungi da qui — la dashboard si aggiorna automaticamente.
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Categoria esistente o nuova</label>
+          <select id="new-cat-sel" onchange="toggleNewCat()">
+            <option value="__new__">+ Nuova categoria</option>
+          </select>
+        </div>
+        <div class="form-row" id="new-cat-name-row"><label>Nome nuova categoria</label>
+          <input type="text" id="new-cat-name" placeholder="Es. Animali" />
+        </div>
+        <div class="form-row"><label>Sottocategoria (opzionale)</label>
+          <input type="text" id="new-subcat" placeholder="Es. Veterinario" />
+        </div>
+        <div class="form-row"><label>Colore</label>
+          <input type="color" id="new-color" value="#6ba8ff" />
+        </div>
+      </div>
+      <button class="btn-primary" onclick="addCategoria()"><i class="ti ti-plus"></i> Aggiungi a Google Sheets</button>
+      <div class="msg ok" id="cat-ok">Categoria aggiunta — ricarica per vederla nei menu</div>
+      <div class="msg err" id="cat-err"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Aggiungi conto / piattaforma</div>
+      <div class="form-grid">
+        <div class="form-row"><label>Nome</label><input type="text" id="conto-nome" placeholder="Es. Fineco" /></div>
+        <div class="form-row"><label>Tipo</label>
+          <select id="conto-tipo"><option>Conto corrente</option><option>Investimento</option><option>Risparmio</option><option>Contanti</option></select>
+        </div>
+        <div class="form-row"><label>Piattaforma</label><input type="text" id="conto-piatt" placeholder="Es. Fineco" /></div>
+        <div class="form-row"><label>Valuta</label><input type="text" id="conto-valuta" value="EUR" /></div>
+      </div>
+      <button class="btn-primary" onclick="addConto()"><i class="ti ti-plus"></i> Aggiungi conto</button>
+      <div class="msg ok" id="conto-ok">Conto aggiunto</div>
+      <div class="msg err" id="conto-err"></div>
+    </div>
+
+
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────
+const API_URL = 'https://script.google.com/macros/s/AKfycbyDVKON1C98Z5rnIgKVeYRR5w47gQnW8CoorxfXYMwmNedPcG72SCLGpqgfatS7nIo1/exec';
+
+// ── APP STATE ────────────────────────────────────────────────
+let CATS = {};
+let CONTI = [];
+let currentSpese = [];
+let currentMonth = new Date().getMonth() + 1;
+let currentYear  = new Date().getFullYear();
+const MONTHS_FULL = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+                     'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+const todayISO = new Date().toISOString().slice(0,10);
+const qDateEl = document.getElementById('q-date');
+if (qDateEl) qDateEl.value = todayISO;
+document.getElementById('inv-data').value = new Date().toISOString().slice(0,10);
+
+// ── API ──────────────────────────────────────────────────────
+async function apiGet(params) {
+  const qs = new URLSearchParams(params).toString();
+  const r  = await fetch(API_URL + '?' + qs);
+  return r.json();
+}
+async function apiPost(body) {
+  const r = await fetch(API_URL, { method:'POST', body: JSON.stringify(body) });
+  return r.json();
+}
+
+// ── STATUS ───────────────────────────────────────────────────
+function setStatus(state, text) {
+  const dot = document.getElementById('sdot');
+  dot.className = 'dot ' + (state==='ok'?'':'loading');
+  if (state==='err') dot.style.background='var(--red)';
+  else dot.style.background = state==='ok' ? 'var(--green)' : 'var(--amber)';
+  document.getElementById('stxt').textContent = text;
+}
+
+// ── RELOAD ───────────────────────────────────────────────────
+async function reloadAll() {
+  setStatus('load','connessione...');
+  try {
+    await Promise.all([loadCategorie(), loadConti()]);
+    console.log('categorie e conti OK');
+    await loadSpese();
+    console.log('spese OK');
+    await loadInvestimenti();
+    console.log('investimenti OK');
+    setStatus('ok','sincronizzato');
+  } catch(e) {
+    console.error('reloadAll error:', e);
+    setStatus('err','errore: ' + e.message);
+  }
+}
+
+// ── CATEGORIE ────────────────────────────────────────────────
+async function loadCategorie() {
+  const res = await apiGet({action:'getCategorie'});
+  if (!res.ok) throw new Error(res.error);
+  CATS = res.data;
+  buildCatSelects();
+}
+
+function buildCatSelects() {
+  ['q-cat','new-cat-sel','inv-piatt-custom'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+  });
+  // q-cat
+  const qc = document.getElementById('q-cat');
+  const prev = qc.value;
+  qc.innerHTML = '<option value="">Categoria...</option>';
+  Object.keys(CATS).forEach(c => qc.innerHTML += `<option value="${c}">${c}</option>`);
+  if (prev) qc.value = prev;
+
+  // new-cat-sel
+  const nc = document.getElementById('new-cat-sel');
+  nc.innerHTML = '<option value="__new__">+ Nuova categoria</option>';
+  Object.keys(CATS).forEach(c => nc.innerHTML += `<option value="${c}">${c}</option>`);
+
+  // inv-piatt: estrae piattaforme investimento dai conti (popolato da buildPiattButtons)
+  // non serve qui — i pulsanti vengono costruiti dinamicamente in loadInvestimenti
+}
+
+function updateSubcats() {
+  const cat = document.getElementById('q-cat').value;
+  const sel = document.getElementById('q-subcat');
+  sel.innerHTML = '<option value="">Sottocategoria...</option>';
+  if (cat && CATS[cat]) CATS[cat].subs.forEach(s => sel.innerHTML += `<option>${s}</option>`);
+}
+
+function toggleNewCat() {
+  const v = document.getElementById('new-cat-sel').value;
+  document.getElementById('new-cat-name-row').style.display = v==='__new__' ? 'flex' : 'none';
+}
+
+// ── CONTI ────────────────────────────────────────────────────
+async function loadConti() {
+  const res = await apiGet({action:'getConti'});
+  if (!res.ok) throw new Error(res.error);
+  CONTI = res.data;
+  renderContiList();
+  buildCatSelects();
+}
+
+function renderContiList() {
+  const el = document.getElementById('conti-list');
+  // Populate e-conto select
+  const contoSel = document.getElementById('e-conto');
+  if (contoSel) {
+    contoSel.innerHTML = '<option value="">Conto...</option>';
+    CONTI.forEach(c => contoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
+  }
+  if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
+  el.innerHTML = CONTI.map(c => `
+    <div class="row">
+      <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
+      <span class="badge badge-blue">${c.valuta}</span>
+    </div>`).join('');
+}
+
+// ── SPESE ────────────────────────────────────────────────────
+async function loadSpese() {
+  updateMonthLabel();
+  const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
+  if (!res.ok) throw new Error(res.error);
+  currentSpese = res.data;
+  renderSpeseMetrics();
+  renderAccordion();
+  renderSubcatFlat();
+  renderTxList();
+  renderSpesaChart();
+  renderBudgetTab();
+
+  // Aggiorna summary mobile
+  const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
+  const mobTot = document.getElementById('mobile-tot');
+  const mobCount = document.getElementById('mobile-count');
+  const mobLbl = document.getElementById('mobile-month-label2');
+  if (mobTot) mobTot.textContent = '€' + fmt(totM);
+  if (mobCount) mobCount.textContent = currentSpese.length;
+  if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
+
+}
+
+function updateMonthLabel() {
+  const lbl = MONTHS_FULL[currentMonth-1] + ' ' + currentYear;
+  document.getElementById('month-label').textContent = lbl;
+  document.getElementById('view-cat-month').textContent = lbl;
+
+}
+
+function renderSpeseMetrics() {
+  const tot = currentSpese.reduce((s,r)=>s+r.importo,0);
+  const avg = currentSpese.length ? tot/currentSpese.length : 0;
+  const _sm = document.getElementById('spese-metrics'); if(_sm) _sm.innerHTML = `
+    <div class="metric"><div class="label">Spese totali</div><div class="value">€${fmt(tot)}</div></div>
+    <div class="metric"><div class="label">Transazioni</div><div class="value">${currentSpese.length}</div></div>
+    <div class="metric"><div class="label">Media</div><div class="value">${currentSpese.length?'€'+fmt(avg):'—'}</div></div>`;
+}
+
+function buildCatTotals() {
+  const t = {};
+  currentSpese.forEach(e => {
+    if (!t[e.categoria]) t[e.categoria] = {total:0, subs:{}};
+    t[e.categoria].total += e.importo;
+    const sub = e.sottocategoria || 'Altro';
+    t[e.categoria].subs[sub] = (t[e.categoria].subs[sub]||0) + e.importo;
+  });
+  return t;
+}
+
+function renderAccordion() {
+  const totals = buildCatTotals();
+  const grand  = Object.values(totals).reduce((a,v)=>a+v.total,0);
+  const el = document.getElementById('cat-accordion');
+  if (!Object.keys(totals).length) { el.innerHTML='<div class="empty">Nessuna spesa questo mese</div>'; return; }
+  el.innerHTML = Object.entries(totals).sort((a,b)=>b[1].total-a[1].total).map(([cat,data]) => {
+    const pct   = Math.round(data.total/grand*100);
+    const color = CATS[cat]?.color || '#888680';
+    const id    = 'acc-' + cat.replace(/\W/g,'_');
+    return `<div style="border-bottom:1px solid var(--border)">
+      <div class="acc-header" onclick="toggleAcc('${id}','${id}c')">
+        <div class="acc-name">
+          <span class="cat-dot" style="background:${color}"></span>
+          ${cat}
+          <span style="font-size:11px;color:var(--hint)">${pct}%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-family:var(--mono);font-size:14px">€${data.total.toFixed(2)}</span>
+          <i class="ti ti-chevron-down" id="${id}c" style="font-size:12px;color:var(--hint);transition:transform .2s"></i>
+        </div>
+      </div>
+      <div class="acc-body" id="${id}">
+        ${Object.entries(data.subs).sort((a,b)=>b[1]-a[1]).map(([sub,amt])=>`
+          <div class="acc-sub">
+            <span style="color:var(--muted)">${sub}</span>
+            <div style="text-align:right">
+              <div style="font-family:var(--mono);font-size:13px">€${amt.toFixed(2)}</div>
+              <div style="font-size:11px;color:var(--hint)">${Math.round(amt/data.total*100)}% di ${cat}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleAcc(bodyId, chevId) {
+  const body = document.getElementById(bodyId);
+  const chev = document.getElementById(chevId);
+  const open = body.classList.contains('open');
+  body.classList.toggle('open', !open);
+  chev.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+function renderSubcatFlat() {
+  const flat = {};
+  currentSpese.forEach(e => {
+    const k = (e.categoria||'')+'\u00b7'+(e.sottocategoria||'Altro');
+    if (!flat[k]) flat[k]={cat:e.categoria,sub:e.sottocategoria||'Altro',amt:0};
+    flat[k].amt += e.importo;
+  });
+  const el = document.getElementById('subcat-flat');
+  if (!Object.keys(flat).length) { el.innerHTML='<div class="empty">Nessuna spesa</div>'; return; }
+  el.innerHTML = Object.values(flat).sort((a,b)=>b.amt-a.amt).map(item => {
+    const color = CATS[item.cat]?.color||'#888680';
+    return `<div class="row">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="cat-dot" style="background:${color}"></span>
+        <div><div class="name">${item.sub}</div><div class="sub">${item.cat}</div></div>
+      </div>
+      <span class="amt">€${item.amt.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderTxList() {
+  const el = document.getElementById('tx-list');
+  if (!currentSpese.length) { el.innerHTML='<div class="empty">Nessun movimento</div>'; return; }
+  el.innerHTML = [...currentSpese].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,30).map(e => {
+    const color = CATS[e.categoria]?.color||'#888680';
+    const d = new Date(e.data);
+    return `<div class="row">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="cat-dot" style="background:${color}"></span>
+        <div>
+          <div class="name">${e.nota||e.sottocategoria||e.categoria}</div>
+          <div class="sub">${e.categoria}${e.sottocategoria?' › '+e.sottocategoria:''} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div>
+        </div>
+      </div>
+      <span class="amt">€${e.importo.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── INVESTIMENTI ─────────────────────────────────────────────
+async function loadInvestimenti() {
+  buildPiattButtons();
+  const res = await apiGet({action:'getInvestimenti', year:currentYear});
+  if (!res.ok) return;
+  const data = res.data;
+
+  // Ultimo snapshot per piattaforma
+  const byP = {};
+  [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
+
+  const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
+  const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
+  const rendEur = totInv - totInv0;
+  const rendPct = totInv0 ? ((rendEur/totInv0)*100).toFixed(1) : 0;
+
+  const _im = document.getElementById('inv-metrics'); if(_im) _im.innerHTML =
+    Object.entries(byP).map(([p,r]) => `
+      <div class="metric">
+        <div class="label">${p}</div>
+        <div class="value">€${fmt(r.valore)}</div>
+        ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
+      </div>`).join('')
+    + `<div class="metric">
+        <div class="label">Totale</div>
+        <div class="value">€${fmt(totInv)}</div>
+        ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
+       </div>`;
+
+  // Grafico andamento
+  renderInvChart(data);
+
+  // Lista
+  const el = document.getElementById('inv-list');
+  if (!data.length) { el.innerHTML='<div class="empty">Nessun snapshot ancora — aggiungine uno sopra</div>'; return; }
+  el.innerHTML = [...data].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,20).map(r => {
+    const rend = r.investito ? r.valore - r.investito : null;
+    return `<div class="row">
+      <div>
+        <div class="name">${r.piattaforma}</div>
+        <div class="sub">${new Date(r.data).toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        ${rend!==null?`<div style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  renderPanoramica(totInv);
+}
+
+let invChartInst = null;
+let selectedPiatt = '';
+
+function buildPiattButtons() {
+  const wrap = document.getElementById('piatt-buttons');
+  if (!wrap) return;
+  const piattaforme = (CONTI||[]).filter(c => c.tipo === 'Investimento').map(c => c.nome);
+  if (!piattaforme.length) {
+    wrap.innerHTML = '<div class="empty" style="font-size:12px">Aggiungi conti investimento nelle Impostazioni</div>';
+    return;
+  }
+  const prevSel = selectedPiatt;
+  wrap.innerHTML = piattaforme.map(p => `
+    <button onclick="selectPiatt('${p}', this)"
+      style="padding:8px 16px;border-radius:var(--radius-sm);border:1px solid var(--border2);
+             background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s">
+      ${p}
+    </button>`).join('');
+  // Auto-select previous or first
+  const toSelect = prevSel && piattaforme.includes(prevSel) ? prevSel : piattaforme[0];
+  const btn = [...wrap.querySelectorAll('button')].find(b => b.textContent.trim() === toSelect);
+  if (btn) selectPiatt(toSelect, btn);
+}
+
+function selectPiatt(p, btn) {
+  selectedPiatt = p;
+  document.querySelectorAll('#piatt-buttons button').forEach(b => {
+    b.style.background = 'transparent'; b.style.color = 'var(--muted)'; b.style.borderColor = 'var(--border)';
+  });
+  btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--text)'; btn.style.borderColor = 'var(--border2)';
+}
+
+function renderInvChart(data) {
+  if (!data.length) return;
+  const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
+  const byP = {};
+  [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => {
+    if (!byP[r.piattaforma]) byP[r.piattaforma] = [];
+    byP[r.piattaforma].push({x: r.data, y: r.valore});
+  });
+  const piattaforme = Object.keys(byP);
+  if (invChartInst) invChartInst.destroy();
+  invChartInst = new Chart(document.getElementById('invChart'), {
+    type: 'line',
+    data: { datasets: piattaforme.map((p,i) => ({
+      label: p, data: byP[p],
+      borderColor: colors[i%colors.length], backgroundColor: 'transparent',
+      tension: .4, pointRadius: 4, pointBackgroundColor: colors[i%colors.length], borderWidth: 2
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+             grid: { display: false }, ticks: { color: '#888680', font: { size: 11 } } },
+        y: { grid: { color: 'rgba(255,255,255,.05)' },
+             ticks: { callback: v => '€'+fmt(v), color: '#888680', font: { size: 11 } } }
+      }
+    }
+  });
+  const _icl = document.getElementById('inv-chart-legend'); if(_icl) _icl.innerHTML = piattaforme.map((p,i) =>
+    `<span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:${colors[i%colors.length]}"></span>${p}</span>`).join('');
+}
+
+
+async function addInvestimento() {
+  const valore   = parseFloat(document.getElementById('inv-valore').value) || 0;
+  const investito= parseFloat(document.getElementById('inv-investito').value) || 0;
+  const data     = document.getElementById('inv-data').value || todayISO;
+  const year     = data.slice(0,4);
+
+  if (!selectedPiatt) { showMsg('inv-err','Seleziona una piattaforma'); return; }
+  if (!valore)         { showMsg('inv-err','Inserisci il valore attuale'); return; }
+
+  const rendimentoEur = investito ? valore - investito : 0;
+  const rendimentoPct = investito ? +((rendimentoEur/investito)*100).toFixed(2) : 0;
+
+  const btn = document.getElementById('save-inv-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Salvataggio...';
+
+  try {
+    const res = await apiPost({
+      action: 'addInvestimento', year,
+      piattaforma: selectedPiatt,
+      strumento:   '',
+      valore, investito, rendimentoEur, rendimentoPct, data
+    });
+    if (res.ok) {
+      document.getElementById('inv-valore').value = '';
+      document.getElementById('inv-investito').value = '';
+      document.getElementById('inv-data').value = todayISO;
+      showMsg('inv-ok');
+      await loadInvestimenti();
+    } else { showMsg('inv-err', res.error||'Errore'); }
+  } catch(e) { showMsg('inv-err', e.message); }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ti ti-check"></i> Salva snapshot';
+}
+
+async function addCategoria() {
+  const selVal = document.getElementById('new-cat-sel').value;
+  const cat    = selVal==='__new__' ? document.getElementById('new-cat-name').value.trim() : selVal;
+  const sub    = document.getElementById('new-subcat').value.trim();
+  const color  = document.getElementById('new-color').value;
+  if (!cat) { showMsg('cat-err','Inserisci il nome della categoria'); return; }
+  try {
+    const res = await apiPost({action:'addCategoria',categoria:cat,sottocategoria:sub,colore:color});
+    if (res.ok) { showMsg('cat-ok'); await loadCategorie(); }
+    else showMsg('cat-err',res.error);
+  } catch(e) { showMsg('cat-err',e.message); }
+}
+
+async function addConto() {
+  const body = {
+    action:'addConto',
+    nome:       document.getElementById('conto-nome').value,
+    tipo:       document.getElementById('conto-tipo').value,
+    piattaforma:document.getElementById('conto-piatt').value,
+    valuta:     document.getElementById('conto-valuta').value||'EUR',
+  };
+  if (!body.nome) { showMsg('conto-err','Inserisci il nome'); return; }
+  try {
+    const res = await apiPost(body);
+    if (res.ok) { showMsg('conto-ok'); await loadConti(); }
+    else showMsg('conto-err',res.error);
+  } catch(e) { showMsg('conto-err',e.message); }
+}
+
+// ── UI HELPERS ───────────────────────────────────────────────
+
+// ── ENTRATE ──────────────────────────────────────────────────
+let currentEntrateMonth = new Date().getMonth() + 1;
+let currentEntrateYear  = new Date().getFullYear();
+
+function updateEntratMonthLabel() {
+  const lbl = MONTHS_FULL[currentEntrateMonth-1] + ' ' + currentEntrateYear;
+  const el = document.getElementById('entrate-month-label');
+  if (el) el.textContent = lbl;
+}
+
+function changeMonthEntrate(d) {
+  currentEntrateMonth = Math.max(1, Math.min(12, currentEntrateMonth + d));
+  loadEntrate();
+}
+
+async function loadEntrate() {
+  updateEntratMonthLabel();
+  const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
+  if (!res.ok) return;
+  const entrate = res.data;
+  const totE = entrate.reduce((s,r)=>s+r.importo, 0);
+  const totS = currentSpese.reduce((s,r)=>s+r.importo, 0);
+  const risp = totE - totS;
+  const metricsEl = document.getElementById('entrate-metrics');
+  if (metricsEl) metricsEl.innerHTML = `
+    <div class="metric"><div class="label">Entrate ${MONTHS_SHORT[currentEntrateMonth-1]}</div><div class="value">€${fmt(totE)}</div></div>
+    <div class="metric"><div class="label">Spese</div><div class="value">€${fmt(totS)}</div></div>
+    <div class="metric"><div class="label">Risparmio</div><div class="value" style="color:${risp>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(risp))}</div><div class="delta ${risp>=0?'up':'dn'}">${risp>=0?'avanzo':'deficit'}</div></div>`;
+  const el = document.getElementById('entrate-list');
+  if (!el) return;
+  if (!entrate.length) { el.innerHTML='<div class="empty">Nessuna entrata questo mese</div>'; return; }
+  el.innerHTML = [...entrate].sort((a,b)=>new Date(b.data)-new Date(a.data)).map(e => {
+    const d = new Date(e.data);
+    return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><span class="amt" style="color:var(--green)">+€${e.importo.toFixed(2)}</span></div>`;
+  }).join('');
+}
+
+async function addEntrata() {
+  const amt  = parseFloat(document.getElementById('e-amount').value);
+  const tipo = document.getElementById('e-tipo').value;
+  const conto= document.getElementById('e-conto').value;
+  const note = document.getElementById('e-note').value;
+  const data = document.getElementById('e-date').value || todayISO;
+  const year = data.slice(0,4);
+  if (!amt || !tipo) { showMsg('entrata-err','Inserisci importo e tipo'); return; }
+  const btn = document.getElementById('save-entrata-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Salvataggio...';
+  try {
+    const res = await apiPost({action:'addEntrata', importo:amt, tipo, conto, nota:note, data, year});
+    if (res.ok) {
+      document.getElementById('e-amount').value = '';
+      document.getElementById('e-note').value = '';
+      document.getElementById('e-date').value = todayISO;
+      showMsg('entrata-ok'); await loadEntrate();
+    } else { showMsg('entrata-err', res.error||'Errore'); }
+  } catch(err) { showMsg('entrata-err', err.message); }
+  btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Salva entrata';
+}
+
+function renderPanoramica(totInv) {
+  const totSpese = currentSpese.reduce((s,r)=>s+r.importo, 0);
+  const panEl = document.getElementById('pan-metrics');
+  if (panEl) panEl.innerHTML = `
+    <div class="metric"><div class="label">Investimenti</div><div class="value">€${fmt(totInv)}</div></div>
+    <div class="metric"><div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div><div class="value">€${fmt(totSpese)}</div></div>`;
+  renderContiList();
+}
+
+
+let spesaInst = null;
+
+function renderSpesaChart() {
+  const totals = buildCatTotals();
+  const labels = Object.keys(totals);
+  const vals   = labels.map(cat => totals[cat].total);
+  const colors = labels.map(cat => CATS[cat]?.color || '#888680');
+  const ctx    = document.getElementById('spesaChart');
+  if (!ctx) return;
+  if (spesaInst) spesaInst.destroy();
+  spesaInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '55%', plugins: { legend: { display: false } } }
+  });
+}
+
+
+// ── BUDGET ───────────────────────────────────────────────────
+let budgetData  = [];
+let budgetMonth = new Date().getMonth() + 1;
+let budgetYear  = new Date().getFullYear();
+let budgetInst  = null;
+
+function updateBudgetLabels() {
+  const lbl = MONTHS_FULL[budgetMonth-1] + ' ' + budgetYear;
+  ['budget-month-label','budget-month-label2','budget-edit-month-label'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = lbl;
+  });
+}
+
+function changeBudgetMonth(d) {
+  budgetMonth = Math.max(1, Math.min(12, budgetMonth + d));
+  updateBudgetLabels();
+  renderBudgetTab();
+}
+
+async function renderBudgetTab() {
+  updateBudgetLabels();
+  const res = await apiGet({action:'getBudget', year:budgetYear});
+  if (!res.ok) return;
+  budgetData = res.data;
+
+  const mi        = budgetMonth - 1;
+  const catTotals = buildCatTotals();
+
+  const bycat = {};
+  budgetData.forEach(r => {
+    if (!bycat[r.categoria]) bycat[r.categoria] = 0;
+    bycat[r.categoria] += r.mensili[mi] || 0;
+  });
+
+  const labels    = [...new Set([...Object.keys(bycat), ...Object.keys(catTotals)])];
+  const budgVals  = labels.map(c => bycat[c] || 0);
+  const realeVals = labels.map(c => (catTotals[c]?.total) || 0);
+  const totBudg   = budgVals.reduce((s,v)=>s+v, 0);
+  const totReale  = realeVals.reduce((s,v)=>s+v, 0);
+  const rimanente = totBudg - totReale;
+
+  const metricsEl = document.getElementById('budget-metrics');
+  if (metricsEl) metricsEl.innerHTML = `
+    <div class="metric">
+      <div class="label">Budget ${MONTHS_SHORT[budgetMonth-1]}</div>
+      <div class="value">€${fmt(totBudg)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Speso</div>
+      <div class="value">€${fmt(totReale)}</div>
+      <div class="delta ${totReale>totBudg?'dn':'up'}">${totBudg?Math.round(totReale/totBudg*100):0}% del budget</div>
+    </div>
+    <div class="metric">
+      <div class="label">Rimanente</div>
+      <div class="value" style="color:${rimanente>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(rimanente))}</div>
+      <div class="delta ${rimanente>=0?'up':'dn'}">${rimanente>=0?'ok':'sforato'}</div>
+    </div>`;
+
+  const ctx = document.getElementById('budgetChart');
+  if (ctx) {
+    if (budgetInst) budgetInst.destroy();
+    budgetInst = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label:'Budget', data:budgVals, backgroundColor:'rgba(255,255,255,0.1)', borderColor:'rgba(255,255,255,0.25)', borderWidth:1 },
+        { label:'Reale',  data:realeVals, backgroundColor:realeVals.map((v,i)=>v>budgVals[i]?'#ff6b6b':'#c9f542'), borderRadius:4 }
+      ]},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ grid:{display:false}, ticks:{color:'#888680',font:{size:11},autoSkip:false,maxRotation:30} },
+          y:{ grid:{color:'rgba(255,255,255,.05)'}, ticks:{callback:v=>'€'+v,color:'#888680',font:{size:11}} }
+        }
+      }
+    });
+  }
+
+  renderBudgetEditForm(mi);
+}
+
+function renderBudgetEditForm(mi) {
+  const form = document.getElementById('budget-edit-form');
+  if (!form) return;
+  if (!budgetData.length) { form.innerHTML='<div class="empty">Nessuna categoria nel foglio Budget</div>'; return; }
+
+  const grouped = {};
+  budgetData.forEach(r => {
+    if (!grouped[r.categoria]) grouped[r.categoria] = [];
+    grouped[r.categoria].push(r);
+  });
+
+  form.innerHTML = Object.entries(grouped).map(([cat, righe]) => {
+    const color = CATS[cat]?.color || '#888680';
+    return `<div style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="width:8px;height:8px;border-radius:2px;background:${color};flex-shrink:0"></span>
+        <span style="font-size:13px;font-weight:500;color:var(--text)">${cat}</span>
+      </div>
+      ${righe.map(r => `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0 6px 16px;border-top:1px solid var(--border)">
+          <span style="flex:1;font-size:13px;color:var(--muted)">${r.sottocategoria||'—'}</span>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:13px;color:var(--hint)">€</span>
+            <input type="number" step="1" min="0"
+              id="budg-${cat.replace(/[^a-z0-9]/gi,'_')}-${(r.sottocategoria||'').replace(/[^a-z0-9]/gi,'_')}"
+              value="${r.mensili[mi]||0}"
+              style="width:90px;text-align:right;font-family:var(--mono);min-height:36px"
+              data-cat="${cat}" data-sub="${r.sottocategoria||''}" />
+          </div>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function saveBudget() {
+  const inputs = document.querySelectorAll('#budget-edit-form input[type=number]');
+  const mi = budgetMonth - 1;
+  const righe = [];
+  inputs.forEach(inp => {
+    const cat = inp.dataset.cat;
+    const sub = inp.dataset.sub;
+    const val = parseFloat(inp.value) || 0;
+    const riga = budgetData.find(r => r.categoria===cat && (r.sottocategoria||'')===(sub||''));
+    if (riga) {
+      const mensili = [...riga.mensili];
+      mensili[mi] = val;
+      righe.push({categoria:cat, sottocategoria:sub, mensili});
+    }
+  });
+
+  const btn = document.getElementById('save-budget-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Salvataggio...'; }
+
+  try {
+    const res = await apiPost({action:'updateBudget', year:budgetYear, righe});
+    if (res.ok) { showMsg('budget-ok'); await renderBudgetTab(); }
+    else showMsg('budget-err', res.error||'Errore');
+  } catch(e) { showMsg('budget-err', e.message); }
+
+  if (btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Salva budget su Google Sheets'; }
+}
+
+function showTab(id, btn) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function changeMonth(d) {
+  currentMonth = Math.max(1, Math.min(12, currentMonth+d));
+  loadSpese();
+}
+
+function setView(v, btn) {
+  document.querySelectorAll('.view-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  ['cat','subcat','list'].forEach(n =>
+    document.getElementById('view-'+n).style.display = n===v?'block':'none');
+}
+
+function showMsg(id, txt) {
+  const el = document.getElementById(id);
+  if (txt) el.textContent = txt;
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none', 4000);
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:0});
+}
+
+// Auto-start
+document.addEventListener('DOMContentLoaded', () => {
+  updateEntratMonthLabel();
+  ['inv-data','e-date','q-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=todayISO; });
+
+// Su mobile apri direttamente tab spese
+if (window.innerWidth <= 600) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-spese').classList.add('active');
+  document.querySelector('.nav button[onclick*=spese]').classList.add('active');
+}
+
+  reloadAll().then(() => {
+    const eDateEl = document.getElementById('e-date');
+    if (eDateEl) eDateEl.value = todayISO;
+  });
+});
+</script>
+</body>
+</html>
