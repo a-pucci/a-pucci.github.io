@@ -433,6 +433,7 @@ function addSpesa_(body) {
     body.metodo         || '',
   ];
   appendRow_('Spese_' + year, row);
+  if (body.conto) updateSaldoConto_(body.conto, -(parseFloat(body.importo) || 0));
   return { ok: true, id: row[0] };
 }
 
@@ -447,6 +448,7 @@ function addEntrata_(body) {
     body.conto || '',
   ];
   appendRow_('Entrate_' + year, row);
+  if (body.conto) updateSaldoConto_(body.conto, parseFloat(body.importo) || 0);
   return { ok: true, id: row[0] };
 }
 
@@ -538,6 +540,23 @@ function deleteRow_(body) {
     }
   }
   return { error: 'Riga non trovata' };
+}
+
+function updateSaldoConto_(nomeConto, delta) {
+  if (!nomeConto || !delta) return;
+  const props = PropertiesService.getScriptProperties();
+  const id    = props.getProperty('ID_CONTI');
+  if (!id) return;
+  const ss    = SpreadsheetApp.openById(id);
+  const sheet = ss.getSheets()[0];
+  const data  = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1] === nomeConto) {                        // colonna Nome = indice 1
+      const current = parseFloat(data[i][8]) || 0;         // colonna Saldo = indice 8
+      sheet.getRange(i + 1, 9).setValue(current + delta);  // colonna 9 = Saldo
+      return;
+    }
+  }
 }
 
 // ── Helpers lettura ──────────────────────────────────────────
