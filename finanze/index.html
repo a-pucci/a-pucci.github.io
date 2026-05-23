@@ -337,6 +337,12 @@
         <div id="conti-list"><div class="skel" style="height:80px"></div></div>
       </div>
     </div>
+    <div class="card">
+      <div class="card-title">Andamento patrimonio</div>
+      <div style="position:relative;height:180px">
+        <canvas id="patrimonioChart" role="img" aria-label="Andamento patrimonio">Caricamento</canvas>
+      </div>
+    </div>
   </div>
 
   <!-- ── SPESE ── -->
@@ -921,6 +927,7 @@ async function loadInvestimenti() {
 
   // Grafico andamento
   renderInvChart(data);
+  renderPatrimonioChart(data);
 
   // Lista
   const el = document.getElementById('inv-list');
@@ -945,6 +952,7 @@ async function loadInvestimenti() {
 
 let invChartInst = null;
 let donutInst    = null;
+let patrimonioInst = null;
 let lastInvByPiatt = {};
 let selectedPiatt = '';
 
@@ -1230,6 +1238,47 @@ function renderDonutChart() {
       </span>
       <span class="leg-val">€${fmt(vals[i])}</span>
     </div>`).join('');
+}
+
+function renderPatrimonioChart(data) {
+  if (!data.length) return;
+  // Aggrega tutti i valori per data (somma piattaforme)
+  const byDate = {};
+  data.forEach(r => {
+    const d = r.data instanceof Date
+      ? r.data.toISOString().slice(0,10)
+      : String(r.data).slice(0,10);
+    if (!byDate[d]) byDate[d] = 0;
+    byDate[d] += Number(r.valore) || 0;
+  });
+  const points = Object.entries(byDate)
+    .sort((a,b) => new Date(a[0]) - new Date(b[0]))
+    .map(([d,v]) => ({ x: d, y: v }));
+  if (points.length < 2) return; // non abbastanza dati per un grafico significativo
+  const ctx = document.getElementById('patrimonioChart');
+  if (!ctx) return;
+  if (patrimonioInst) patrimonioInst.destroy();
+  patrimonioInst = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [{
+      data: points,
+      borderColor: '#c9f542',
+      backgroundColor: 'rgba(201,245,66,0.07)',
+      tension: 0.4, fill: true,
+      pointRadius: 3, pointBackgroundColor: '#c9f542', borderWidth: 2
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+             grid: { display: false }, ticks: { color: '#888680', font: { size: 11 } } },
+        y: { grid: { color: 'rgba(255,255,255,.05)' },
+             ticks: { callback: v => '€'+fmt(v), color: '#888680', font: { size: 11 } } }
+      }
+    }
+  });
 }
 
 

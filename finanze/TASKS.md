@@ -7,41 +7,33 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## PRIORITÀ ALTA
 
-### TASK 1 — Stabilità JS: audit completo funzioni mancanti
-**Problema:** durante lo sviluppo iterativo alcune funzioni JS sono andate perse.
-**Cosa fare:**
-- Fare un audit completo di tutte le funzioni chiamate nell'HTML (`onclick="..."`) e nel JS
-- Verificare che ognuna sia definita nel file
-- Verificare che ogni `document.getElementById(...)` abbia un null guard prima di `.innerHTML`
-- Verificare che il `DOMContentLoaded` non chiami funzioni definite dopo di esso
-- Testare il flusso completo: apertura pagina → refresh → navigazione tra tab
-
-**Funzioni che devono esistere (verifica):**
-`reloadAll`, `loadCategorie`, `loadConti`, `loadSpese`, `loadEntrate`, `loadInvestimenti`,
-`renderBudgetTab`, `renderBudgetEditForm`, `saveBudget`, `changeBudgetMonth`, `updateBudgetLabels`,
-`renderPanoramica`, `renderAccordion`, `renderSubcatFlat`, `renderTxList`, `renderSpesaChart`,
-`renderInvChart`, `buildPiattButtons`, `selectPiatt`, `buildCatSelects`, `updateSubcats`,
-`toggleNewCat`, `renderContiList`, `addSpesa`, `addEntrata`, `addInvestimento`,
-`addCategoria`, `addConto`, `changeMonth`, `changeMonthEntrate`, `changeBudgetMonth`,
-`setView`, `showTab`, `showMsg`, `fmt`, `apiGet`, `apiPost`, `setStatus`,
-`buildCatTotals`, `updateMonthLabel`, `updateEntratMonthLabel`
+### ~~TASK 1 — Stabilità JS: audit completo funzioni mancanti~~ ✅ COMPLETATO
+**Fix applicati:**
+- Tutte le funzioni verificate — nessuna mancante
+- Null guard aggiunti: `setStatus`, `renderAccordion`, `renderSubcatFlat`, `renderTxList`, `loadInvestimenti` (inv-list), `addSpesa`/`addInvestimento`/`addEntrata` (btn)
+- `loadEntrate()` aggiunta in `reloadAll()` — era mai chiamata al caricamento
+- `api-url-display` popolato in `DOMContentLoaded`
+- HTML mobile-summary aggiunto in tab Spese (`mobile-tot`, `mobile-count`, `mobile-month-label2`)
+- Dead code rimosso: forEach no-op in `buildCatSelects`
+- Init date deduplicato; indentazione blocco mobile corretta
+- Preview verificata su localhost:8080
 
 ---
 
-### TASK 2 — Tab Panoramica: patrimonio totale reale
-**Problema:** la tab Panoramica mostra dati parziali o skeleton.
-**Cosa fare:**
-- Mostrare **patrimonio totale** = somma ultimo snapshot investimenti + saldo conti correnti
-  - Nota: i saldi conti correnti non sono in Sheets (non tracciati), usare solo investimenti per ora
-  - Aggiungere campo "Saldo" al foglio Conti e relativa UI per aggiornarlo
-- Mostrare metriche: Patrimonio totale | Investimenti | Spese mese | Risparmio mese
-- Donut chart: allocazione tra piattaforme di investimento (Trade Republic vs Moneyfarm)
-- Lista conti con saldo aggiornato
-- Grafico andamento patrimonio ultimi 6-12 mesi (da snapshot investimenti aggregati per data)
+### TASK 2 — Tab Panoramica: patrimonio totale reale ✅ COMPLETATO
+**Fix applicati:**
 
-**Modifiche Apps Script necessarie:**
-- Aggiungere colonna `Saldo` al foglio Conti
-- Aggiungere azione GET `getContiSaldi` e POST `updateSaldoConto`
+**Apps Script (`FinanzePersonali_AppsScript.js`):**
+- Colonna `Saldo` aggiunta al foglio Conti (COLUMNS, DEFAULT_ACCOUNTS, getConti_, addConto_)
+- Funzione `updateSaldoConto_` aggiunta, chiamata da addSpesa_ e addEntrata_ per aggiornare il saldo automaticamente
+
+**Frontend (`index.html`):**
+- `currentEntrate` resa variabile globale
+- Campo `q-conto` (opzionale) aggiunto al form spese; `addSpesa` lo passa all'API
+- `renderPanoramica`: riscritta con 5 metriche (patrimonio totale, investimenti, saldo conti, spese mese, risparmio mese)
+- Aggiunta `renderDonutChart` per allocazione piattaforme su `#donutChart`
+- `renderContiList`: saldo colorato per conti correnti, badge `inv` per investimenti
+- Aggiunta `renderPatrimonioChart` per andamento patrimonio su `#patrimonioChart` (canvas nuovo)
 
 ---
 
