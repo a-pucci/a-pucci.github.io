@@ -569,6 +569,21 @@
 // ── CONFIG ────────────────────────────────────────────────────
 const API_URL = 'https://script.google.com/macros/s/AKfycbznNiYJAS3h73XOqwbPWOkB4YJVUdF2UklWVVy8kOg-hV6jLYMNtocxzCI-1HtGGDkR/exec';
 
+// ── ICON → EMOJI MAP ─────────────────────────────────────────
+const CAT_EMOJI = {
+  'car':           '🚗',
+  'home':          '🏠',
+  'shopping-cart': '🛒',
+  'heart':         '❤️',
+  'confetti':      '🎉',
+  'tag':           '🏷️',
+  'repeat':        '🔄',
+  'bus':           '🚌',
+  'piggy-bank':    '🐷',
+  'dots':          '⚙️',
+};
+function catEmoji(icon) { return icon ? (CAT_EMOJI[icon] || '') : ''; }
+
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
 let CONTI = [];
@@ -637,7 +652,10 @@ function buildCatSelects() {
   if (qc) {
     const prev = qc.value;
     qc.innerHTML = '<option value="">Categoria...</option>';
-    Object.keys(CATS).forEach(c => qc.innerHTML += `<option value="${c}">${c}</option>`);
+    Object.keys(CATS).forEach(c => {
+      const e = catEmoji(CATS[c]?.icon);
+      qc.innerHTML += `<option value="${c}">${e ? e+' ' : ''}${c}</option>`;
+    });
     if (prev) qc.value = prev;
   }
 
@@ -645,7 +663,10 @@ function buildCatSelects() {
   const nc = document.getElementById('new-cat-sel');
   if (nc) {
     nc.innerHTML = '<option value="__new__">+ Nuova categoria</option>';
-    Object.keys(CATS).forEach(c => nc.innerHTML += `<option value="${c}">${c}</option>`);
+    Object.keys(CATS).forEach(c => {
+      const e = catEmoji(CATS[c]?.icon);
+      nc.innerHTML += `<option value="${c}">${e ? e+' ' : ''}${c}</option>`;
+    });
   }
 
   // inv-piatt: estrae piattaforme investimento dai conti (popolato da buildPiattButtons)
@@ -762,10 +783,10 @@ function renderAccordion() {
   el.innerHTML = Object.entries(totals).sort((a,b)=>b[1].total-a[1].total).map(([cat,data]) => {
     const pct   = Math.round(data.total/grand*100);
     const color = CATS[cat]?.color || '#888680';
-    const icon  = CATS[cat]?.icon;
+    const emoji = catEmoji(CATS[cat]?.icon);
     const id    = 'acc-' + cat.replace(/\W/g,'_');
-    const iconEl = icon
-      ? `<i class="ti ti-${icon}" style="font-size:16px;color:${color}"></i>`
+    const iconEl = emoji
+      ? `<span style="font-size:16px;line-height:1">${emoji}</span>`
       : `<span class="cat-dot" style="background:${color}"></span>`;
     return `<div style="border-bottom:1px solid var(--border)">
       <div class="acc-header" onclick="toggleAcc('${id}','${id}c')">
