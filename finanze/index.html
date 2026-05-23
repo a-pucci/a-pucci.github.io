@@ -738,11 +738,17 @@ function renderContiList() {
          .forEach(c => qContoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
   }
   if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
-  el.innerHTML = CONTI.map(c => `
-    <div class="row">
+  el.innerHTML = CONTI.map(c => {
+    const isInv = c.tipo === 'Investimento';
+    const saldoColor = !isInv && c.saldo > 0 ? 'var(--green)' : !isInv && c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
+    const right = isInv
+      ? `<span class="badge badge-blue">inv</span>`
+      : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmt(c.saldo) : '—'}</span>`;
+    return `<div class="row">
       <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
-      <span class="badge badge-blue">${c.valuta}</span>
-    </div>`).join('');
+      ${right}
+    </div>`;
+  }).join('');
 }
 
 // ── SPESE ────────────────────────────────────────────────────
@@ -893,6 +899,7 @@ async function loadInvestimenti() {
   // Ultimo snapshot per piattaforma
   const byP = {};
   [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
+  lastInvByPiatt = byP;
 
   const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
   const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
@@ -937,6 +944,8 @@ async function loadInvestimenti() {
 }
 
 let invChartInst = null;
+let donutInst    = null;
+let lastInvByPiatt = {};
 let selectedPiatt = '';
 
 function buildPiattButtons() {
@@ -1163,12 +1172,64 @@ async function addEntrata() {
 }
 
 function renderPanoramica(totInv) {
-  const totSpese = currentSpese.reduce((s,r)=>s+r.importo, 0);
+  const totSpese   = currentSpese.reduce((s,r) => s + r.importo, 0);
+  const totEntrate = currentEntrate.reduce((s,r) => s + r.importo, 0);
+  const risparmio  = totEntrate - totSpese;
+  const totConti   = CONTI
+    .filter(c => c.tipo !== 'Investimento')
+    .reduce((s,c) => s + (c.saldo || 0), 0);
+  const patrimonio = totInv + totConti;
+
   const panEl = document.getElementById('pan-metrics');
   if (panEl) panEl.innerHTML = `
-    <div class="metric"><div class="label">Investimenti</div><div class="value">€${fmt(totInv)}</div></div>
-    <div class="metric"><div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div><div class="value">€${fmt(totSpese)}</div></div>`;
+    <div class="metric">
+      <div class="label">Patrimonio totale</div>
+      <div class="value" style="color:var(--accent)">€${fmt(patrimonio)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Investimenti</div>
+      <div class="value">€${fmt(totInv)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Saldo conti</div>
+      <div class="value">€${fmt(totConti)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div>
+      <div class="value" style="color:var(--red)">€${fmt(totSpese)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Risparmio ${MONTHS_SHORT[currentEntrateMonth-1]}</div>
+      <div class="value" style="color:${risparmio>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(risparmio))}</div>
+      <div class="delta ${risparmio>=0?'up':'dn'}">${risparmio>=0?'avanzo':'deficit'}</div>
+    </div>`;
+
   renderContiList();
+  renderDonutChart();
+}
+
+function renderDonutChart() {
+  const piattaforme = Object.keys(lastInvByPiatt);
+  if (!piattaforme.length) return;
+  const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
+  const vals   = piattaforme.map(p => lastInvByPiatt[p].valore);
+  const ctx    = document.getElementById('donutChart');
+  if (!ctx) return;
+  if (donutInst) donutInst.destroy();
+  donutInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: piattaforme, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0 }] },
+    options: { responsive: false, cutout: '60%', plugins: { legend: { display: false } } }
+  });
+  const legEl = document.getElementById('donut-legend');
+  if (legEl) legEl.innerHTML = piattaforme.map((p,i) => `
+    <div class="leg-item">
+      <span class="leg-label">
+        <span style="width:8px;height:8px;border-radius:2px;background:${colors[i%colors.length]};display:inline-block"></span>
+        ${p}
+      </span>
+      <span class="leg-val">€${fmt(vals[i])}</span>
+    </div>`).join('');
 }
 
 
