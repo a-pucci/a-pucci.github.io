@@ -543,7 +543,7 @@ function deleteRow_(body) {
 }
 
 function updateSaldoConto_(nomeConto, delta) {
-  if (!nomeConto || !delta) return;
+  if (!nomeConto || delta == null || isNaN(delta)) return;
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty('ID_CONTI');
   if (!id) return;

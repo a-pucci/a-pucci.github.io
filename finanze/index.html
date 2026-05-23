@@ -338,9 +338,9 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Andamento patrimonio</div>
+      <div class="card-title">Andamento investimenti</div>
       <div style="position:relative;height:180px">
-        <canvas id="patrimonioChart" role="img" aria-label="Andamento patrimonio">Caricamento</canvas>
+        <canvas id="patrimonioChart" role="img" aria-label="Andamento investimenti">Caricamento</canvas>
       </div>
     </div>
   </div>
@@ -667,6 +667,7 @@ async function reloadAll() {
     await Promise.all([loadCategorie(), loadConti()]);
     console.log('categorie e conti OK');
     await loadSpese();
+    currentEntrateMonth = currentMonth; // mantieni i due mesi in sincronia
     await loadEntrate();
     console.log('spese e entrate OK');
     await loadInvestimenti();
@@ -1083,11 +1084,17 @@ async function addConto() {
 }
 
 async function addSpesa() {
-  const amt   = parseFloat(document.getElementById('q-amount').value);
-  const cat   = document.getElementById('q-cat').value;
-  const sub   = document.getElementById('q-subcat').value;
-  const nota  = document.getElementById('q-note').value;
-  const data  = document.getElementById('q-date').value || todayISO;
+  const elAmt  = document.getElementById('q-amount');
+  const elCat  = document.getElementById('q-cat');
+  const elSub  = document.getElementById('q-subcat');
+  const elNota = document.getElementById('q-note');
+  const elData = document.getElementById('q-date');
+  if (!elAmt || !elCat || !elSub || !elNota || !elData) return;
+  const amt   = parseFloat(elAmt.value);
+  const cat   = elCat.value;
+  const sub   = elSub.value;
+  const nota  = elNota.value;
+  const data  = elData.value || todayISO;
   const year  = data.slice(0,4);
   const conto = document.getElementById('q-conto')?.value || '';
 
@@ -1207,12 +1214,11 @@ function renderPanoramica(totInv) {
       <div class="value" style="color:var(--red)">€${fmt(totSpese)}</div>
     </div>
     <div class="metric">
-      <div class="label">Risparmio ${MONTHS_SHORT[currentEntrateMonth-1]}</div>
+      <div class="label">Risparmio ${MONTHS_SHORT[currentMonth-1]}</div>
       <div class="value" style="color:${risparmio>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(risparmio))}</div>
       <div class="delta ${risparmio>=0?'up':'dn'}">${risparmio>=0?'avanzo':'deficit'}</div>
     </div>`;
 
-  renderContiList();
   renderDonutChart();
 }
 
