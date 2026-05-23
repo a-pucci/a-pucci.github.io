@@ -725,6 +725,7 @@ async function loadConti() {
   const res = await apiGet({action:'getConti'});
   if (!res.ok) throw new Error(res.error);
   CONTI = res.data;
+  console.log('[debug] CONTI[0]:', JSON.stringify(CONTI[0])); // rimuovere dopo debug
   renderContiList();
   buildCatSelects();
 }
