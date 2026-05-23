@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Finanze</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f0f0f'/><text x='16' y='23' font-size='20' text-anchor='middle' font-family='sans-serif' fill='%23c9f542'>€</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
@@ -55,12 +56,12 @@
       z-index: 100; gap: 0;
     }
     .nav button {
-      flex: 1; flex-direction: column; gap: 3px;
-      padding: 6px 2px; font-size: 10px; border: none;
+      flex: 1; flex-direction: column; gap: 4px;
+      padding: 10px 2px; font-size: 11px; border: none;
       border-radius: var(--radius-sm); background: transparent;
     }
-    .nav button span { display: block; font-size: 10px; }
-    .nav button i { font-size: 20px; }
+    .nav button span { display: block; font-size: 11px; }
+    .nav button i { font-size: 22px; }
     .nav button.active { background: var(--surface2); }
 
     /* Totale mese in cima su mobile */
@@ -761,11 +762,15 @@ function renderAccordion() {
   el.innerHTML = Object.entries(totals).sort((a,b)=>b[1].total-a[1].total).map(([cat,data]) => {
     const pct   = Math.round(data.total/grand*100);
     const color = CATS[cat]?.color || '#888680';
+    const icon  = CATS[cat]?.icon;
     const id    = 'acc-' + cat.replace(/\W/g,'_');
+    const iconEl = icon
+      ? `<i class="ti ti-${icon}" style="font-size:16px;color:${color}"></i>`
+      : `<span class="cat-dot" style="background:${color}"></span>`;
     return `<div style="border-bottom:1px solid var(--border)">
       <div class="acc-header" onclick="toggleAcc('${id}','${id}c')">
         <div class="acc-name">
-          <span class="cat-dot" style="background:${color}"></span>
+          ${iconEl}
           ${cat}
           <span style="font-size:11px;color:var(--hint)">${pct}%</span>
         </div>
