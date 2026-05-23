@@ -623,7 +623,7 @@
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbyDVKON1C98Z5rnIgKVeYRR5w47gQnW8CoorxfXYMwmNedPcG72SCLGpqgfatS7nIo1/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbznNiYJAS3h73XOqwbPWOkB4YJVUdF2UklWVVy8kOg-hV6jLYMNtocxzCI-1HtGGDkR/exec';
 
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
@@ -725,7 +725,6 @@ async function loadConti() {
   const res = await apiGet({action:'getConti'});
   if (!res.ok) throw new Error(res.error);
   CONTI = res.data;
-  console.log('[debug] CONTI[0]:', JSON.stringify(CONTI[0])); // rimuovere dopo debug
   renderContiList();
   buildCatSelects();
 }
