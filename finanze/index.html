@@ -311,7 +311,6 @@
     <button class="active" onclick="showTab('panoramica',this)"><i class="ti ti-layout-dashboard"></i><span>Panoramica</span></button>
     <button onclick="showTab('spese',this)"><i class="ti ti-wallet"></i><span>Spese</span></button>
     <button onclick="showTab('investimenti',this)"><i class="ti ti-trending-up"></i><span>Investimenti</span></button>
-    <button onclick="showTab('budget',this)"><i class="ti ti-chart-bar"></i><span>Budget</span></button>
     <button onclick="showTab('entrate',this)"><i class="ti ti-plus"></i><span>Entrate</span></button>
     <button onclick="showTab('impostazioni',this)"><i class="ti ti-settings"></i><span>Impostazioni</span></button>
   </nav>
@@ -473,46 +472,6 @@
     </div>
   </div>
 
-  <!-- ── BUDGET ── -->
-  <div id="tab-budget" class="section">
-    <div class="month-nav">
-      <button onclick="changeBudgetMonth(-1)">‹</button>
-      <span id="budget-month-label">— —</span>
-      <button onclick="changeBudgetMonth(1)">›</button>
-    </div>
-
-    <div class="metric-grid" id="budget-metrics">
-      <div class="metric"><div class="label">Budget totale</div><div class="skel" style="height:26px;width:75%;margin-top:6px"></div></div>
-      <div class="metric"><div class="label">Speso</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
-      <div class="metric"><div class="label">Rimanente</div><div class="skel" style="height:26px;width:60%;margin-top:6px"></div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Budget vs reale — <span id="budget-month-label2"></span></div>
-      <div style="position:relative;height:260px"><canvas id="budgetChart" role="img" aria-label="Budget vs reale">Caricamento</canvas></div>
-      <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--muted)">
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.15)"></span>Budget</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--accent)"></span>Reale</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Imposta budget — <span id="budget-edit-month-label"></span></div>
-      <div style="font-size:12px;color:var(--hint);margin-bottom:1rem;line-height:1.6">
-        Modifica i valori e clicca Salva. Le categorie vengono da <strong style="color:var(--muted)">Finanza/Categorie</strong> su Drive.
-      </div>
-      <div id="budget-edit-form">
-        <div class="empty">Caricamento categorie...</div>
-      </div>
-      <button class="btn-primary" id="save-budget-btn" onclick="saveBudget()" style="margin-top:1rem">
-        <i class="ti ti-check"></i> Salva budget su Google Sheets
-      </button>
-      <div class="msg ok" id="budget-ok">Budget salvato</div>
-      <div class="msg err" id="budget-err"></div>
-    </div>
-  </div>
-
-
   <!-- ── ENTRATE ── -->
   <div id="tab-entrate" class="section">
     <div class="month-nav">
@@ -601,22 +560,6 @@
       <div class="msg ok" id="cat-ok">Categoria aggiunta — ricarica per vederla nei menu</div>
       <div class="msg err" id="cat-err"></div>
     </div>
-
-    <div class="card">
-      <div class="card-title">Aggiungi conto / piattaforma</div>
-      <div class="form-grid">
-        <div class="form-row"><label>Nome</label><input type="text" id="conto-nome" placeholder="Es. Fineco" /></div>
-        <div class="form-row"><label>Tipo</label>
-          <select id="conto-tipo"><option>Conto corrente</option><option>Investimento</option><option>Risparmio</option><option>Contanti</option></select>
-        </div>
-        <div class="form-row"><label>Piattaforma</label><input type="text" id="conto-piatt" placeholder="Es. Fineco" /></div>
-        <div class="form-row"><label>Valuta</label><input type="text" id="conto-valuta" value="EUR" /></div>
-      </div>
-      <button class="btn-primary" onclick="addConto()"><i class="ti ti-plus"></i> Aggiungi conto</button>
-      <div class="msg ok" id="conto-ok">Conto aggiunto</div>
-      <div class="msg err" id="conto-err"></div>
-    </div>
-
 
   </div>
 </div>
@@ -1068,22 +1011,6 @@ async function addCategoria() {
   } catch(e) { showMsg('cat-err',e.message); }
 }
 
-async function addConto() {
-  const body = {
-    action:'addConto',
-    nome:       document.getElementById('conto-nome').value,
-    tipo:       document.getElementById('conto-tipo').value,
-    piattaforma:document.getElementById('conto-piatt').value,
-    valuta:     document.getElementById('conto-valuta').value||'EUR',
-  };
-  if (!body.nome) { showMsg('conto-err','Inserisci il nome'); return; }
-  try {
-    const res = await apiPost(body);
-    if (res.ok) { showMsg('conto-ok'); await loadConti(); }
-    else showMsg('conto-err',res.error);
-  } catch(e) { showMsg('conto-err',e.message); }
-}
-
 async function addSpesa() {
   const elAmt  = document.getElementById('q-amount');
   const elCat  = document.getElementById('q-cat');
@@ -1343,150 +1270,6 @@ function renderSpesaChart() {
   });
 }
 
-
-// ── BUDGET ───────────────────────────────────────────────────
-let budgetData  = [];
-let budgetMonth = new Date().getMonth() + 1;
-let budgetYear  = new Date().getFullYear();
-let budgetInst  = null;
-
-function updateBudgetLabels() {
-  const lbl = MONTHS_FULL[budgetMonth-1] + ' ' + budgetYear;
-  ['budget-month-label','budget-month-label2','budget-edit-month-label'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = lbl;
-  });
-}
-
-function changeBudgetMonth(d) {
-  budgetMonth = Math.max(1, Math.min(12, budgetMonth + d));
-  updateBudgetLabels();
-  renderBudgetTab();
-}
-
-async function renderBudgetTab() {
-  updateBudgetLabels();
-  const res = await apiGet({action:'getBudget', year:budgetYear});
-  if (!res.ok) return;
-  budgetData = res.data;
-
-  const mi        = budgetMonth - 1;
-  const catTotals = buildCatTotals();
-
-  const bycat = {};
-  budgetData.forEach(r => {
-    if (!bycat[r.categoria]) bycat[r.categoria] = 0;
-    bycat[r.categoria] += r.mensili[mi] || 0;
-  });
-
-  const labels    = [...new Set([...Object.keys(bycat), ...Object.keys(catTotals)])];
-  const budgVals  = labels.map(c => bycat[c] || 0);
-  const realeVals = labels.map(c => (catTotals[c]?.total) || 0);
-  const totBudg   = budgVals.reduce((s,v)=>s+v, 0);
-  const totReale  = realeVals.reduce((s,v)=>s+v, 0);
-  const rimanente = totBudg - totReale;
-
-  const metricsEl = document.getElementById('budget-metrics');
-  if (metricsEl) metricsEl.innerHTML = `
-    <div class="metric">
-      <div class="label">Budget ${MONTHS_SHORT[budgetMonth-1]}</div>
-      <div class="value">€${fmt(totBudg)}</div>
-    </div>
-    <div class="metric">
-      <div class="label">Speso</div>
-      <div class="value">€${fmt(totReale)}</div>
-      <div class="delta ${totReale>totBudg?'dn':'up'}">${totBudg?Math.round(totReale/totBudg*100):0}% del budget</div>
-    </div>
-    <div class="metric">
-      <div class="label">Rimanente</div>
-      <div class="value" style="color:${rimanente>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(rimanente))}</div>
-      <div class="delta ${rimanente>=0?'up':'dn'}">${rimanente>=0?'ok':'sforato'}</div>
-    </div>`;
-
-  const ctx = document.getElementById('budgetChart');
-  if (ctx) {
-    if (budgetInst) budgetInst.destroy();
-    budgetInst = new Chart(ctx, {
-      type: 'bar',
-      data: { labels, datasets: [
-        { label:'Budget', data:budgVals, backgroundColor:'rgba(255,255,255,0.1)', borderColor:'rgba(255,255,255,0.25)', borderWidth:1 },
-        { label:'Reale',  data:realeVals, backgroundColor:realeVals.map((v,i)=>v>budgVals[i]?'#ff6b6b':'#c9f542'), borderRadius:4 }
-      ]},
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ display:false } },
-        scales:{
-          x:{ grid:{display:false}, ticks:{color:'#888680',font:{size:11},autoSkip:false,maxRotation:30} },
-          y:{ grid:{color:'rgba(255,255,255,.05)'}, ticks:{callback:v=>'€'+v,color:'#888680',font:{size:11}} }
-        }
-      }
-    });
-  }
-
-  renderBudgetEditForm(mi);
-}
-
-function renderBudgetEditForm(mi) {
-  const form = document.getElementById('budget-edit-form');
-  if (!form) return;
-  if (!budgetData.length) { form.innerHTML='<div class="empty">Nessuna categoria nel foglio Budget</div>'; return; }
-
-  const grouped = {};
-  budgetData.forEach(r => {
-    if (!grouped[r.categoria]) grouped[r.categoria] = [];
-    grouped[r.categoria].push(r);
-  });
-
-  form.innerHTML = Object.entries(grouped).map(([cat, righe]) => {
-    const color = CATS[cat]?.color || '#888680';
-    return `<div style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <span style="width:8px;height:8px;border-radius:2px;background:${color};flex-shrink:0"></span>
-        <span style="font-size:13px;font-weight:500;color:var(--text)">${cat}</span>
-      </div>
-      ${righe.map(r => `
-        <div style="display:flex;align-items:center;gap:10px;padding:6px 0 6px 16px;border-top:1px solid var(--border)">
-          <span style="flex:1;font-size:13px;color:var(--muted)">${r.sottocategoria||'—'}</span>
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="font-size:13px;color:var(--hint)">€</span>
-            <input type="number" step="1" min="0"
-              id="budg-${cat.replace(/[^a-z0-9]/gi,'_')}-${(r.sottocategoria||'').replace(/[^a-z0-9]/gi,'_')}"
-              value="${r.mensili[mi]||0}"
-              style="width:90px;text-align:right;font-family:var(--mono);min-height:36px"
-              data-cat="${cat}" data-sub="${r.sottocategoria||''}" />
-          </div>
-        </div>`).join('')}
-    </div>`;
-  }).join('');
-}
-
-async function saveBudget() {
-  const inputs = document.querySelectorAll('#budget-edit-form input[type=number]');
-  const mi = budgetMonth - 1;
-  const righe = [];
-  inputs.forEach(inp => {
-    const cat = inp.dataset.cat;
-    const sub = inp.dataset.sub;
-    const val = parseFloat(inp.value) || 0;
-    const riga = budgetData.find(r => r.categoria===cat && (r.sottocategoria||'')===(sub||''));
-    if (riga) {
-      const mensili = [...riga.mensili];
-      mensili[mi] = val;
-      righe.push({categoria:cat, sottocategoria:sub, mensili});
-    }
-  });
-
-  const btn = document.getElementById('save-budget-btn');
-  if (btn) { btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Salvataggio...'; }
-
-  try {
-    const res = await apiPost({action:'updateBudget', year:budgetYear, righe});
-    if (res.ok) { showMsg('budget-ok'); await renderBudgetTab(); }
-    else showMsg('budget-err', res.error||'Errore');
-  } catch(e) { showMsg('budget-err', e.message); }
-
-  if (btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Salva budget su Google Sheets'; }
-}
 
 function showTab(id, btn) {
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
