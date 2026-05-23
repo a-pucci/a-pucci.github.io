@@ -361,6 +361,9 @@
         <select id="q-cat" onchange="updateSubcats()"><option value="">Categoria...</option></select>
         <select id="q-subcat"><option value="">Sottocategoria...</option></select>
       </div>
+      <div class="selects-row">
+        <select id="q-conto"><option value="">Conto (opzionale)...</option></select>
+      </div>
       <input type="text" id="q-note" placeholder="Nota (opzionale)" style="margin-bottom:8px" />
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
@@ -620,6 +623,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyDVKON1C98Z5rnIgKVeYRR
 let CATS = {};
 let CONTI = [];
 let currentSpese = [];
+let currentEntrate = [];
 let currentMonth = new Date().getMonth() + 1;
 let currentYear  = new Date().getFullYear();
 const MONTHS_FULL = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
@@ -726,6 +730,12 @@ function renderContiList() {
   if (contoSel) {
     contoSel.innerHTML = '<option value="">Conto...</option>';
     CONTI.forEach(c => contoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
+  }
+  const qContoSel = document.getElementById('q-conto');
+  if (qContoSel) {
+    qContoSel.innerHTML = '<option value="">Conto (opzionale)...</option>';
+    CONTI.filter(c => c.tipo !== 'Investimento')
+         .forEach(c => qContoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
   }
   if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
   el.innerHTML = CONTI.map(c => `
@@ -1056,12 +1066,13 @@ async function addConto() {
 }
 
 async function addSpesa() {
-  const amt  = parseFloat(document.getElementById('q-amount').value);
-  const cat  = document.getElementById('q-cat').value;
-  const sub  = document.getElementById('q-subcat').value;
-  const nota = document.getElementById('q-note').value;
-  const data = document.getElementById('q-date').value || todayISO;
-  const year = data.slice(0,4);
+  const amt   = parseFloat(document.getElementById('q-amount').value);
+  const cat   = document.getElementById('q-cat').value;
+  const sub   = document.getElementById('q-subcat').value;
+  const nota  = document.getElementById('q-note').value;
+  const data  = document.getElementById('q-date').value || todayISO;
+  const year  = data.slice(0,4);
+  const conto = document.getElementById('q-conto')?.value || '';
 
   if (!amt || !cat) { showMsg('spesa-err','Inserisci importo e categoria'); return; }
 
@@ -1075,7 +1086,7 @@ async function addSpesa() {
       categoria: cat,
       sottocategoria: sub,
       nota, data, year,
-      conto: '',
+      conto,
       metodo: ''
     });
     if (res.ok) {
@@ -1110,7 +1121,8 @@ async function loadEntrate() {
   updateEntratMonthLabel();
   const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
   if (!res.ok) return;
-  const entrate = res.data;
+  currentEntrate = res.data;
+  const entrate = currentEntrate;
   const totE = entrate.reduce((s,r)=>s+r.importo, 0);
   const totS = currentSpese.reduce((s,r)=>s+r.importo, 0);
   const risp = totE - totS;
