@@ -750,7 +750,7 @@ function renderContiList() {
     const saldoColor = !isInv && c.saldo > 0 ? 'var(--green)' : !isInv && c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
     const right = isInv
       ? `<span class="badge badge-blue">inv</span>`
-      : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmt(c.saldo) : '—'}</span>`;
+      : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmtDec(c.saldo) : '—'}</span>`;
     return `<div class="row">
       <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
       ${right}
@@ -1200,15 +1200,15 @@ function renderPanoramica(totInv) {
   if (panEl) panEl.innerHTML = `
     <div class="metric">
       <div class="label">Patrimonio totale</div>
-      <div class="value" style="color:var(--accent)">€${fmt(patrimonio)}</div>
+      <div class="value" style="color:var(--accent)">€${fmtDec(patrimonio)}</div>
     </div>
     <div class="metric">
       <div class="label">Investimenti</div>
-      <div class="value">€${fmt(totInv)}</div>
+      <div class="value">€${fmtDec(totInv)}</div>
     </div>
     <div class="metric">
       <div class="label">Saldo conti</div>
-      <div class="value">€${fmt(totConti)}</div>
+      <div class="value">€${fmtDec(totConti)}</div>
     </div>
     <div class="metric">
       <div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div>
@@ -1248,7 +1248,19 @@ function renderDonutChart() {
 }
 
 function renderPatrimonioChart(data) {
-  if (!data.length) return;
+  const ctx = document.getElementById('patrimonioChart');
+  if (!ctx) return;
+  if (!data.length) {
+    ctx.style.display = 'none';
+    const wrap = ctx.parentElement;
+    if (wrap && !wrap.querySelector('.chart-empty')) {
+      const msg = document.createElement('div');
+      msg.className = 'chart-empty empty';
+      msg.textContent = 'Nessun snapshot ancora — aggiungine uno nella tab Investimenti';
+      wrap.appendChild(msg);
+    }
+    return;
+  }
   // Aggrega tutti i valori per data (somma piattaforme)
   const byDate = {};
   data.forEach(r => {
@@ -1261,8 +1273,19 @@ function renderPatrimonioChart(data) {
   const points = Object.entries(byDate)
     .sort((a,b) => new Date(a[0]) - new Date(b[0]))
     .map(([d,v]) => ({ x: d, y: v }));
-  if (points.length < 2) return; // non abbastanza dati per un grafico significativo
-  const ctx = document.getElementById('patrimonioChart');
+  if (points.length < 2) {
+    ctx.style.display = 'none';
+    const wrap = ctx.parentElement;
+    if (wrap && !wrap.querySelector('.chart-empty')) {
+      const msg = document.createElement('div');
+      msg.className = 'chart-empty empty';
+      msg.textContent = 'Aggiungi almeno 2 snapshot in date diverse per vedere il grafico';
+      wrap.appendChild(msg);
+    }
+    return;
+  }
+  ctx.style.display = '';
+  ctx.parentElement.querySelectorAll('.chart-empty').forEach(el => el.remove());
   if (!ctx) return;
   if (patrimonioInst) patrimonioInst.destroy();
   patrimonioInst = new Chart(ctx, {
@@ -1480,6 +1503,9 @@ function showMsg(id, txt) {
 
 function fmt(n) {
   return Number(n).toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:0});
+}
+function fmtDec(n) {
+  return Number(n).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 // Auto-start
