@@ -1224,26 +1224,40 @@ function renderPanoramica(totInv) {
 }
 
 function renderDonutChart() {
-  const piattaforme = Object.keys(lastInvByPiatt);
-  if (!piattaforme.length) return;
-  const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
-  const vals   = piattaforme.map(p => lastInvByPiatt[p].valore);
-  const ctx    = document.getElementById('donutChart');
+  const ctx = document.getElementById('donutChart');
   if (!ctx) return;
+  const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
+
+  // Dati: snapshot investimenti se presenti, altrimenti saldi conti correnti
+  let labels, vals, subtitle;
+  const piattaforme = Object.keys(lastInvByPiatt);
+  if (piattaforme.length) {
+    labels   = piattaforme;
+    vals     = piattaforme.map(p => lastInvByPiatt[p].valore);
+    subtitle = 'Investimenti';
+  } else {
+    const contiConSaldo = CONTI.filter(c => c.tipo !== 'Investimento' && c.saldo > 0);
+    if (!contiConSaldo.length) return;
+    labels   = contiConSaldo.map(c => c.nome);
+    vals     = contiConSaldo.map(c => c.saldo);
+    subtitle = 'Liquidità';
+  }
+
   if (donutInst) donutInst.destroy();
   donutInst = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels: piattaforme, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0 }] },
+    data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0 }] },
     options: { responsive: false, cutout: '60%', plugins: { legend: { display: false } } }
   });
+
   const legEl = document.getElementById('donut-legend');
-  if (legEl) legEl.innerHTML = piattaforme.map((p,i) => `
+  if (legEl) legEl.innerHTML = labels.map((p,i) => `
     <div class="leg-item">
       <span class="leg-label">
         <span style="width:8px;height:8px;border-radius:2px;background:${colors[i%colors.length]};display:inline-block"></span>
         ${p}
       </span>
-      <span class="leg-val">€${fmt(vals[i])}</span>
+      <span class="leg-val">€${fmtDec(vals[i])}</span>
     </div>`).join('');
 }
 
