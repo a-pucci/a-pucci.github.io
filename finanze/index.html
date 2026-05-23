@@ -926,6 +926,9 @@ async function loadInvestimenti() {
         ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
        </div>`;
 
+  // Panoramica — chiamata sempre, anche senza snapshot
+  renderPanoramica(totInv);
+
   // Grafico andamento
   renderInvChart(data);
   renderPatrimonioChart(data);
@@ -947,8 +950,6 @@ async function loadInvestimenti() {
       </div>
     </div>`;
   }).join('');
-
-  renderPanoramica(totInv);
 }
 
 let invChartInst = null;
