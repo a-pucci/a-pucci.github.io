@@ -113,11 +113,13 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ---
 
-### TASK 11 — Note e documentazione Apps Script
-**Cosa fare:**
-- Aggiungere JSDoc a tutte le funzioni dello script
-- Aggiungere funzione `nuovoAnno(year)` che crea la struttura per un nuovo anno
-  duplicando il Budget dell'anno precedente e azzerando Spese/Entrate/Investimenti
+### ~~TASK 11 — Note e documentazione Apps Script~~ ✅ COMPLETATO
+**Fix applicati:**
+- JSDoc aggiunto a tutte le funzioni di `FinanzePersonali_AppsScript.js` (parametri, return type, descrizione)
+- `nuovoAnno(year)` aggiunta: crea cartella anno, Spese/Entrate/Investimenti, aggiorna PropertiesService
+  - Da eseguire manualmente da script.google.com a inizio anno
+  - Default: anno corrente + 1 se non si passa un parametro
+  - Non crea il foglio Budget (rimosso dall'app)
 
 ---
 

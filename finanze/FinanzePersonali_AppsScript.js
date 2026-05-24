@@ -76,24 +76,25 @@ const DEFAULT_ACCOUNTS = [
 ];
 
 // ── SETUP PRINCIPALE ─────────────────────────────────────────
+
+/**
+ * Setup iniziale completo. Da eseguire una sola volta dopo aver incollato lo script.
+ * Crea la struttura cartelle/file su Drive e salva gli ID nei PropertiesService.
+ */
 function setupCompleto() {
   Logger.log('⏳ Avvio setup struttura Finanza...');
 
-  // 1. Crea/trova cartella root
   const rootFolder = getOrCreateFolder_(DriveApp.getRootFolder(), CONFIG.ROOT_FOLDER_NAME);
   Logger.log('✅ Cartella Finanza: ' + rootFolder.getUrl());
 
-  // 2. Crea file master (Categorie, Conti) nella root
   const catSS   = getOrCreateSpreadsheet_(rootFolder, 'Categorie');
   const contiSS  = getOrCreateSpreadsheet_(rootFolder, 'Conti');
   setupCategorie_(catSS);
   setupConti_(contiSS);
   Logger.log('✅ File master creati');
 
-  // 3. Crea cartella anno
   const yearFolder = getOrCreateFolder_(rootFolder, String(CONFIG.YEAR));
 
-  // 4. Crea file annuali
   const speseSS  = getOrCreateSpreadsheet_(yearFolder, 'Spese_' + CONFIG.YEAR);
   const entrSS   = getOrCreateSpreadsheet_(yearFolder, 'Entrate_' + CONFIG.YEAR);
   const invSS    = getOrCreateSpreadsheet_(yearFolder, 'Investimenti_' + CONFIG.YEAR);
@@ -105,7 +106,6 @@ function setupCompleto() {
   setupBudget_(budgSS);
   Logger.log('✅ File annuali ' + CONFIG.YEAR + ' creati');
 
-  // 5. Salva gli ID nei PropertiesService per uso futuro dello script
   const props = PropertiesService.getScriptProperties();
   props.setProperties({
     'ID_CATEGORIE':    catSS.getId(),
@@ -128,12 +128,65 @@ function setupCompleto() {
   Logger.log('  → copia l\'URL e incollalo nella dashboard');
 }
 
+/**
+ * Crea la struttura Sheets per un nuovo anno (Spese, Entrate, Investimenti).
+ * Da eseguire manualmente a inizio anno da script.google.com → Esegui.
+ * Non sovrascrive file già esistenti per l'anno indicato.
+ * @param {number} year - Anno da creare (es. 2027). Default: anno corrente + 1.
+ */
+function nuovoAnno(year) {
+  const targetYear = String(year || CONFIG.YEAR + 1);
+  Logger.log('⏳ Creazione struttura per anno ' + targetYear + '...');
+
+  const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
+  if (!rootIter.hasNext()) throw new Error('Cartella "' + CONFIG.ROOT_FOLDER_NAME + '" non trovata su Drive. Esegui setupCompleto() prima.');
+  const root = rootIter.next();
+
+  const yearFolder = getOrCreateFolder_(root, targetYear);
+
+  const speseSS = getOrCreateSpreadsheet_(yearFolder, 'Spese_' + targetYear);
+  const entrSS  = getOrCreateSpreadsheet_(yearFolder, 'Entrate_' + targetYear);
+  const invSS   = getOrCreateSpreadsheet_(yearFolder, 'Investimenti_' + targetYear);
+
+  setupSheet_(speseSS, 'Spese_' + targetYear,        COLUMNS.Spese);
+  setupSheet_(entrSS,  'Entrate_' + targetYear,       COLUMNS.Entrate);
+  setupSheet_(invSS,   'Investimenti_' + targetYear,  COLUMNS.Investimenti);
+
+  const props = PropertiesService.getScriptProperties();
+  props.setProperties({
+    'ID_SPESE':        speseSS.getId(),
+    'ID_ENTRATE':      entrSS.getId(),
+    'ID_INVESTIMENTI': invSS.getId(),
+    'YEAR':            targetYear,
+  });
+
+  Logger.log('✅ Anno ' + targetYear + ' creato:');
+  Logger.log('   Spese_' + targetYear + ': ' + speseSS.getUrl());
+  Logger.log('   Entrate_' + targetYear + ': ' + entrSS.getUrl());
+  Logger.log('   Investimenti_' + targetYear + ': ' + invSS.getUrl());
+  Logger.log('');
+  Logger.log('Ridistribuisci lo script (Distribuisci → Gestisci distribuzioni → nuova versione) per applicare il cambio anno.');
+}
+
 // ── Utility: cartelle e spreadsheet ─────────────────────────
+
+/**
+ * Restituisce una cartella esistente o la crea se non esiste.
+ * @param {Folder} parent - Cartella padre su Drive
+ * @param {string} name - Nome della cartella
+ * @returns {Folder}
+ */
 function getOrCreateFolder_(parent, name) {
   const iter = parent.getFoldersByName(name);
   return iter.hasNext() ? iter.next() : parent.createFolder(name);
 }
 
+/**
+ * Restituisce uno Spreadsheet esistente nella cartella o lo crea se non esiste.
+ * @param {Folder} folder - Cartella Drive in cui cercare/creare il file
+ * @param {string} name - Nome del file Spreadsheet
+ * @returns {Spreadsheet}
+ */
 function getOrCreateSpreadsheet_(folder, name) {
   const iter = folder.getFilesByName(name);
   if (iter.hasNext()) {
@@ -145,6 +198,11 @@ function getOrCreateSpreadsheet_(folder, name) {
 }
 
 // ── Setup fogli specifici ────────────────────────────────────
+
+/**
+ * Inizializza il foglio Categorie con header e dati di default.
+ * @param {Spreadsheet} ss
+ */
 function setupCategorie_(ss) {
   const sheet = ss.getSheets()[0];
   sheet.setName('Categorie');
@@ -162,6 +220,10 @@ function setupCategorie_(ss) {
   autoResizeAll_(sheet, header.length);
 }
 
+/**
+ * Inizializza il foglio Conti con header e conti di default.
+ * @param {Spreadsheet} ss
+ */
 function setupConti_(ss) {
   const sheet = ss.getSheets()[0];
   sheet.setName('Conti');
@@ -179,6 +241,12 @@ function setupConti_(ss) {
   autoResizeAll_(sheet, header.length);
 }
 
+/**
+ * Inizializza un foglio generico con header e riga intestazione congelata.
+ * @param {Spreadsheet} ss
+ * @param {string} sheetName - Nome da assegnare al foglio
+ * @param {string[]} columns - Array di nomi colonne
+ */
 function setupSheet_(ss, sheetName, columns) {
   const sheet = ss.getSheets()[0];
   sheet.setName(sheetName);
@@ -190,6 +258,11 @@ function setupSheet_(ss, sheetName, columns) {
   autoResizeAll_(sheet, columns.length);
 }
 
+/**
+ * Inizializza il foglio Budget con header, colonne congelate e
+ * pre-popolamento dalle categorie attive.
+ * @param {Spreadsheet} ss
+ */
 function setupBudget_(ss) {
   const sheet = ss.getSheets()[0];
   sheet.setName('Budget_' + CONFIG.YEAR);
@@ -199,7 +272,6 @@ function setupBudget_(ss) {
   sheet.getRange(1, 1, 1, header.length).setValues([header]);
   formatHeader_(sheet, header.length);
 
-  // Pre-popola con le categorie esistenti
   const props = PropertiesService.getScriptProperties();
   const catId = props.getProperty('ID_CATEGORIE');
   if (catId) {
@@ -223,6 +295,12 @@ function setupBudget_(ss) {
 }
 
 // ── Formattazione ────────────────────────────────────────────
+
+/**
+ * Applica stile scuro alla riga di intestazione del foglio.
+ * @param {Sheet} sheet
+ * @param {number} numCols - Numero di colonne da formattare
+ */
 function formatHeader_(sheet, numCols) {
   const headerRange = sheet.getRange(1, 1, 1, numCols);
   headerRange.setBackground('#2C2C2A');
@@ -231,16 +309,32 @@ function formatHeader_(sheet, numCols) {
   headerRange.setFontSize(11);
 }
 
+/**
+ * Ridimensiona automaticamente tutte le colonne in base al contenuto.
+ * @param {Sheet} sheet
+ * @param {number} numCols - Numero di colonne da ridimensionare
+ */
 function autoResizeAll_(sheet, numCols) {
   for (let i = 1; i <= numCols; i++) sheet.autoResizeColumn(i);
 }
 
 // ── ID generatore ────────────────────────────────────────────
+
+/**
+ * Genera un ID univoco breve (8 caratteri esadecimali).
+ * @returns {string}
+ */
 function generateId_() {
   return Utilities.getUuid().split('-')[0];
 }
 
 // ── doGet: lettura dati per la dashboard ─────────────────────
+
+/**
+ * Handler HTTP GET. Smista le richieste di lettura dati in base al parametro `action`.
+ * @param {Object} e - Evento Apps Script con e.parameter
+ * @returns {TextOutput} Risposta JSON
+ */
 function doGet(e) {
   const params = e.parameter;
   const action = params.action || '';
@@ -266,6 +360,12 @@ function doGet(e) {
 }
 
 // ── doPost: scrittura dati ───────────────────────────────────
+
+/**
+ * Handler HTTP POST. Smista le richieste di scrittura dati in base al campo `action` del body.
+ * @param {Object} e - Evento Apps Script con e.postData.contents (JSON)
+ * @returns {TextOutput} Risposta JSON
+ */
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
@@ -291,6 +391,11 @@ function doPost(e) {
 }
 
 // ── Letture ──────────────────────────────────────────────────
+
+/**
+ * Legge tutte le categorie attive e le restituisce raggruppate per categoria padre.
+ * @returns {{ ok: boolean, data: Object.<string, {color: string, icon: string, subs: string[]}> }}
+ */
 function getCategorie_() {
   const data = readSheet_('ID_CATEGORIE');
   const cats = {};
@@ -303,6 +408,10 @@ function getCategorie_() {
   return { ok: true, data: cats };
 }
 
+/**
+ * Legge tutti i conti attivi con saldo corrente.
+ * @returns {{ ok: boolean, data: Array }}
+ */
 function getConti_() {
   const data = readSheet_('ID_CONTI');
   const conti = data
@@ -315,6 +424,11 @@ function getConti_() {
   return { ok: true, data: conti };
 }
 
+/**
+ * Legge le spese filtrate per anno, mese e/o categoria.
+ * @param {{ year?: number|string, month?: number|string, cat?: string }} params
+ * @returns {{ ok: boolean, data: Array }}
+ */
 function getSpese_(params) {
   const year  = params.year  || CONFIG.YEAR;
   const month = params.month || null;
@@ -338,6 +452,11 @@ function getSpese_(params) {
   return { ok: true, data: rows };
 }
 
+/**
+ * Legge le entrate filtrate per anno e mese.
+ * @param {{ year?: number|string, month?: number|string }} params
+ * @returns {{ ok: boolean, data: Array }}
+ */
 function getEntrate_(params) {
   const year  = params.year  || CONFIG.YEAR;
   const month = params.month || null;
@@ -355,6 +474,11 @@ function getEntrate_(params) {
   return { ok: true, data: rows };
 }
 
+/**
+ * Legge tutti gli snapshot investimenti per l'anno specificato.
+ * @param {{ year?: number|string }} params
+ * @returns {{ ok: boolean, data: Array }}
+ */
 function getInvestimenti_(params) {
   const year = params.year || CONFIG.YEAR;
   const data = readSheetByName_('Investimenti_' + year);
@@ -366,6 +490,11 @@ function getInvestimenti_(params) {
   return { ok: true, data: rows };
 }
 
+/**
+ * Legge le righe del foglio Budget per l'anno specificato.
+ * @param {{ year?: number|string }} params
+ * @returns {{ ok: boolean, data: Array }}
+ */
 function getBudget_(params) {
   const year = params.year || CONFIG.YEAR;
   const data = readSheetByName_('Budget_' + year);
@@ -376,6 +505,12 @@ function getBudget_(params) {
   return { ok: true, data: rows };
 }
 
+/**
+ * Calcola il riepilogo finanziario per un mese: totali spese/entrate,
+ * risparmio, investimenti per piattaforma e spese per categoria.
+ * @param {{ year?: number|string, month?: number|string }} params
+ * @returns {{ ok: boolean, data: Object }}
+ */
 function getSummary_(params) {
   const year  = params.year  || CONFIG.YEAR;
   const month = params.month || (new Date().getMonth() + 1);
@@ -387,7 +522,7 @@ function getSummary_(params) {
   const totSpese   = spese.reduce((s, r) => s + r.importo, 0);
   const totEntrate = entrate.reduce((s, r) => s + r.importo, 0);
 
-  // Ultimo snapshot investimenti per piattaforma
+  // Ultimo snapshot per piattaforma
   const invByPiattaforma = {};
   investim.forEach(r => {
     if (!invByPiattaforma[r.piattaforma] ||
@@ -398,7 +533,6 @@ function getSummary_(params) {
   const totInvestimenti = Object.values(invByPiattaforma)
     .reduce((s, r) => s + r.valore, 0);
 
-  // Spese per categoria
   const perCat = {};
   spese.forEach(r => {
     if (!perCat[r.categoria]) perCat[r.categoria] = { totale: 0, subs: {} };
@@ -421,6 +555,12 @@ function getSummary_(params) {
   };
 }
 
+/**
+ * Calcola i totali mensili di spese ed entrate per l'intero anno (12 mesi).
+ * Usato dal grafico andamento annuale nella dashboard.
+ * @param {{ year?: number|string }} params
+ * @returns {{ ok: boolean, data: { spese: number[], entrate: number[] } }}
+ */
 function getSummaryAnno_(params) {
   const year = params.year || CONFIG.YEAR;
   const speseMensili   = new Array(12).fill(0);
@@ -429,8 +569,8 @@ function getSummaryAnno_(params) {
   try {
     const spese = readSheetByName_('Spese_' + year);
     spese.forEach(r => {
-      const m = new Date(r[1]).getMonth(); // r[1] = Data
-      speseMensili[m] += parseFloat(r[2]) || 0; // r[2] = Importo
+      const m = new Date(r[1]).getMonth();
+      speseMensili[m] += parseFloat(r[2]) || 0;
     });
   } catch(e) {}
 
@@ -446,6 +586,12 @@ function getSummaryAnno_(params) {
 }
 
 // ── Scritture ────────────────────────────────────────────────
+
+/**
+ * Aggiunge una spesa al foglio dell'anno e aggiorna il saldo del conto associato.
+ * @param {{ importo: number, categoria: string, sottocategoria?: string, nota?: string, data?: string, year?: string, conto?: string, metodo?: string }} body
+ * @returns {{ ok: boolean, id: string }}
+ */
 function addSpesa_(body) {
   const year = body.year || CONFIG.YEAR;
   const row = [
@@ -463,6 +609,11 @@ function addSpesa_(body) {
   return { ok: true, id: row[0] };
 }
 
+/**
+ * Aggiunge un'entrata al foglio dell'anno e aggiorna il saldo del conto associato.
+ * @param {{ importo: number, tipo?: string, nota?: string, data?: string, year?: string, conto?: string }} body
+ * @returns {{ ok: boolean, id: string }}
+ */
 function addEntrata_(body) {
   const year = body.year || CONFIG.YEAR;
   const row = [
@@ -478,6 +629,11 @@ function addEntrata_(body) {
   return { ok: true, id: row[0] };
 }
 
+/**
+ * Aggiunge uno snapshot investimento al foglio dell'anno.
+ * @param {{ piattaforma: string, valore: number, data?: string, year?: string, conto?: string, strumento?: string, investito?: number, rendimentoEur?: number, rendimentoPct?: number }} body
+ * @returns {{ ok: boolean }}
+ */
 function addInvestimento_(body) {
   const year = body.year || CONFIG.YEAR;
   const row = [
@@ -494,6 +650,12 @@ function addInvestimento_(body) {
   return { ok: true };
 }
 
+/**
+ * Aggiunge una nuova categoria (e relativa sottocategoria) al foglio Categorie
+ * e alla riga corrispondente nel Budget corrente.
+ * @param {{ categoria: string, sottocategoria?: string, colore?: string, icona?: string }} body
+ * @returns {{ ok: boolean }}
+ */
 function addCategoria_(body) {
   const props = PropertiesService.getScriptProperties();
   const ss    = SpreadsheetApp.openById(props.getProperty('ID_CATEGORIE'));
@@ -503,7 +665,6 @@ function addCategoria_(body) {
     body.colore || '#888780', body.icona || 'dots', 'TRUE'
   ]);
 
-  // Aggiunge anche al Budget corrente
   try {
     const budgSS    = SpreadsheetApp.openById(props.getProperty('ID_BUDGET'));
     const budgSheet = budgSS.getSheets()[0];
@@ -513,6 +674,11 @@ function addCategoria_(body) {
   return { ok: true };
 }
 
+/**
+ * Aggiunge un nuovo conto al foglio Conti con saldo iniziale zero.
+ * @param {{ nome: string, tipo: string, piattaforma?: string, iban?: string, valuta?: string, note?: string }} body
+ * @returns {{ ok: boolean }}
+ */
 function addConto_(body) {
   const props = PropertiesService.getScriptProperties();
   const ss    = SpreadsheetApp.openById(props.getProperty('ID_CONTI'));
@@ -525,8 +691,12 @@ function addConto_(body) {
   return { ok: true };
 }
 
+/**
+ * Aggiorna i valori mensili del Budget per le righe indicate.
+ * @param {{ year?: string, righe: Array<{ categoria: string, sottocategoria: string, mensili: number[] }> }} body
+ * @returns {{ ok: boolean }}
+ */
 function updateBudget_(body) {
-  const year  = body.year || CONFIG.YEAR;
   const props = PropertiesService.getScriptProperties();
   const ss    = SpreadsheetApp.openById(props.getProperty('ID_BUDGET'));
   const sheet = ss.getSheets()[0];
@@ -543,8 +713,12 @@ function updateBudget_(body) {
   return { ok: true };
 }
 
+/**
+ * Aggiorna i campi di una riga esistente in Spese o Entrate, identificata dall'ID.
+ * @param {{ sheetKey: 'spese'|'entrate', year?: string, id: string, fields: Array }} body
+ * @returns {{ ok: boolean }|{ error: string }}
+ */
 function updateRow_(body) {
-  // body: { sheetKey, year, id, fields[] }
   // fields per spese:   [Data, Importo, Categoria, Sottocategoria, Nota, Conto, Metodo_Pagamento]
   // fields per entrate: [Data, Importo, Tipo, Nota, Conto]
   const year = body.year || CONFIG.YEAR;
@@ -560,7 +734,6 @@ function updateRow_(body) {
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(body.id)) {
-      // Aggiorna le colonne a partire dalla 2 (indice 1), mantenendo l'ID in colonna 1
       sheet.getRange(i + 1, 2, 1, body.fields.length).setValues([body.fields]);
       return { ok: true };
     }
@@ -568,8 +741,12 @@ function updateRow_(body) {
   return { error: 'Riga non trovata' };
 }
 
+/**
+ * Elimina una riga da Spese o Entrate identificata dall'ID.
+ * @param {{ sheetKey: 'spese'|'entrate', year?: string, id: string }} body
+ * @returns {{ ok: boolean }|{ error: string }}
+ */
 function deleteRow_(body) {
-  // body: { sheetKey, year, id }
   const year  = body.year || CONFIG.YEAR;
   const keyMap = {
     spese:  'Spese_' + year,
@@ -593,6 +770,12 @@ function deleteRow_(body) {
   return { error: 'Riga non trovata' };
 }
 
+/**
+ * Aggiorna il saldo del conto specificato sommando il delta indicato.
+ * Usato internamente da addSpesa_ (delta negativo) e addEntrata_ (delta positivo).
+ * @param {string} nomeConto - Nome del conto (colonna Nome nel foglio Conti)
+ * @param {number} delta - Importo da sommare al saldo corrente (negativo per spese)
+ */
 function updateSaldoConto_(nomeConto, delta) {
   if (!nomeConto || delta == null || isNaN(delta)) return;
   const props = PropertiesService.getScriptProperties();
@@ -602,15 +785,21 @@ function updateSaldoConto_(nomeConto, delta) {
   const sheet = ss.getSheets()[0];
   const data  = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][1] === nomeConto) {                        // colonna Nome = indice 1
-      const current = parseFloat(data[i][8]) || 0;         // colonna Saldo = indice 8
-      sheet.getRange(i + 1, 9).setValue(current + delta);  // colonna 9 = Saldo
+    if (data[i][1] === nomeConto) {
+      const current = parseFloat(data[i][8]) || 0;
+      sheet.getRange(i + 1, 9).setValue(current + delta);
       return;
     }
   }
 }
 
 // ── Helpers lettura ──────────────────────────────────────────
+
+/**
+ * Legge tutte le righe non vuote di uno Spreadsheet tramite la chiave Properties (es. 'ID_CATEGORIE').
+ * @param {string} propKey - Chiave in PropertiesService che contiene l'ID dello Spreadsheet
+ * @returns {Array[]} Righe dati (senza header)
+ */
 function readSheet_(propKey) {
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty(propKey);
@@ -621,6 +810,12 @@ function readSheet_(propKey) {
   return data.slice(1).filter(r => r.some(c => c !== ''));
 }
 
+/**
+ * Legge tutte le righe non vuote di un foglio specifico dentro uno Spreadsheet annuale.
+ * Il nome del foglio determina quale Spreadsheet aprire (es. 'Spese_2025' → ID_SPESE).
+ * @param {string} sheetName - Nome del foglio (es. 'Spese_2025')
+ * @returns {Array[]} Righe dati (senza header)
+ */
 function readSheetByName_(sheetName) {
   const yearKey  = 'ID_' + sheetName.split('_')[0].toUpperCase();
   const props    = PropertiesService.getScriptProperties();
@@ -633,15 +828,20 @@ function readSheetByName_(sheetName) {
   return data.slice(1).filter(r => r.some(c => c !== ''));
 }
 
+/**
+ * Aggiunge una riga al foglio specificato. Se il file per l'anno non esiste ancora,
+ * lo crea automaticamente con la struttura corretta.
+ * @param {string} sheetName - Nome del foglio (es. 'Spese_2025')
+ * @param {Array} row - Valori della riga da aggiungere
+ */
 function appendRow_(sheetName, row) {
-  const type     = sheetName.split('_')[0];   // es. "Spese"
-  const year     = sheetName.split('_')[1];   // es. "2026"
+  const type     = sheetName.split('_')[0];
+  const year     = sheetName.split('_')[1];
   const yearKey  = 'ID_' + type.toUpperCase();
   const props    = PropertiesService.getScriptProperties();
   const id       = props.getProperty(yearKey);
 
   if (!id) {
-    // Il file per questo anno non esiste ancora — crealo
     Logger.log('Creo file per anno: ' + year);
     const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
     if (!rootIter.hasNext()) throw new Error('Cartella Finanza non trovata');
@@ -659,7 +859,6 @@ function appendRow_(sheetName, row) {
   const ss    = SpreadsheetApp.openById(id);
   let sheet   = ss.getSheetByName(sheetName);
 
-  // Il file esiste ma il foglio per questo anno potrebbe mancare
   if (!sheet) {
     Logger.log('Creo foglio: ' + sheetName);
     const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
@@ -676,6 +875,12 @@ function appendRow_(sheetName, row) {
 }
 
 // ── Response helper ──────────────────────────────────────────
+
+/**
+ * Serializza un oggetto JS in una risposta HTTP JSON per Apps Script.
+ * @param {Object} data
+ * @returns {TextOutput}
+ */
 function jsonResponse_(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
