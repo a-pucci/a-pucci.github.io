@@ -163,6 +163,7 @@
     padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px;
   }
   .row:last-child { border-bottom: none; }
+  .list-group-label { font-size: 10px; color: var(--hint); text-transform: uppercase; letter-spacing: .08em; padding: 10px 0 4px; }
   .row .name { color: var(--text); }
   .row .sub  { font-size: 11px; color: var(--hint); margin-top: 2px; }
   .row .amt  { font-family: var(--mono); font-weight: 500; color: var(--text); }
@@ -728,22 +729,42 @@ function renderContiList() {
   const qContoSel = document.getElementById('q-conto');
   if (qContoSel) {
     qContoSel.innerHTML = '<option value="">Conto (opzionale)...</option>';
-    CONTI.filter(c => c.tipo !== 'Investimento')
+    CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
          .forEach(c => qContoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
   }
   if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
-  el.innerHTML = CONTI.map(c => {
-    const isInv = c.tipo === 'Investimento';
-    const saldoColor = !isInv && c.saldo > 0 ? 'var(--green)' : !isInv && c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
-    const invVal = isInv ? (lastInvByPiatt[c.piattaforma]?.valore ?? null) : null;
-    const right = isInv
-      ? `<span style="font-family:var(--mono);font-size:14px;color:var(--blue)">${invVal != null ? '€'+fmtDec(invVal) : '—'}</span>`
+
+  const correnti  = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.tipo !== 'Piano pensione');
+  const investim  = CONTI.filter(c => c.tipo === 'Investimento');
+  const pensione  = CONTI.filter(c => c.tipo === 'Piano pensione');
+
+  function renderContoRow(c, color) {
+    const snapVal = lastInvByPiatt[c.piattaforma]?.valore ?? null;
+    const saldoColor = c.saldo > 0 ? 'var(--green)' : c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
+    const valColor = color || 'var(--muted)';
+    const right = (c.tipo === 'Investimento' || c.tipo === 'Piano pensione')
+      ? `<span style="font-family:var(--mono);font-size:14px;color:${valColor}">${snapVal != null ? '€'+fmtDec(snapVal) : '—'}</span>`
       : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmtDec(c.saldo) : '—'}</span>`;
     return `<div class="row">
       <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
       ${right}
     </div>`;
-  }).join('');
+  }
+
+  let html = '';
+  if (correnti.length) {
+    html += `<div class="list-group-label">Conti correnti</div>`;
+    html += correnti.map(c => renderContoRow(c, null)).join('');
+  }
+  if (investim.length) {
+    html += `<div class="list-group-label">Investimenti</div>`;
+    html += investim.map(c => renderContoRow(c, 'var(--blue)')).join('');
+  }
+  if (pensione.length) {
+    html += `<div class="list-group-label">Piano pensione</div>`;
+    html += pensione.map(c => renderContoRow(c, 'var(--amber)')).join('');
+  }
+  el.innerHTML = html;
 }
 
 // ── SPESE ────────────────────────────────────────────────────
@@ -949,7 +970,7 @@ function openEditMovimento(sheetKey, id, year) {
 
     const contoSel = document.getElementById('edit-conto');
     contoSel.innerHTML = '<option value="">Conto (opzionale)...</option>';
-    CONTI.filter(c => c.tipo !== 'Investimento')
+    CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
          .forEach(c => contoSel.innerHTML += `<option value="${c.nome}" ${c.nome===item.conto?'selected':''}>${c.nome}</option>`);
 
   } else {
@@ -966,7 +987,7 @@ function openEditMovimento(sheetKey, id, year) {
 
     const contoSel = document.getElementById('edit-e-conto');
     contoSel.innerHTML = '<option value="">Conto...</option>';
-    CONTI.filter(c => c.tipo !== 'Investimento')
+    CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
          .forEach(c => contoSel.innerHTML += `<option value="${c.nome}" ${c.nome===item.conto?'selected':''}>${c.nome}</option>`);
   }
 
@@ -1321,7 +1342,7 @@ function renderPanoramica(totInv) {
   const totEntrate = currentEntrate.reduce((s,r) => s + r.importo, 0);
   const risparmio  = totEntrate - totSpese;
   const totConti   = CONTI
-    .filter(c => c.tipo !== 'Investimento')
+    .filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
     .reduce((s,c) => s + (c.saldo || 0), 0);
   const patrimonio = totInv + totConti;
 
@@ -1418,7 +1439,7 @@ function renderDonutChart() {
     vals     = piattaforme.map(p => lastInvByPiatt[p].valore);
     subtitle = 'Investimenti';
   } else {
-    const contiConSaldo = CONTI.filter(c => c.tipo !== 'Investimento' && c.saldo > 0);
+    const contiConSaldo = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.saldo > 0);
     if (!contiConSaldo.length) return;
     labels   = contiConSaldo.map(c => c.nome);
     vals     = contiConSaldo.map(c => c.saldo);
