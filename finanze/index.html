@@ -809,6 +809,66 @@ function renderSpeseMetrics() {
     <div class="metric"><div class="label">Media</div><div class="value">${currentSpese.length?'€'+fmt(avg):'—'}</div></div>`;
 }
 
+function getFilteredSpese() {
+  return currentSpese.filter(e => {
+    if (activeFilters.q) {
+      const q = activeFilters.q.toLowerCase();
+      if (!(e.nota||'').toLowerCase().includes(q) &&
+          !(e.categoria||'').toLowerCase().includes(q) &&
+          !(e.sottocategoria||'').toLowerCase().includes(q)) return false;
+    }
+    if (activeFilters.cat && e.categoria !== activeFilters.cat) return false;
+    if (activeFilters.minAmt !== null && e.importo < activeFilters.minAmt) return false;
+    if (activeFilters.maxAmt !== null && e.importo > activeFilters.maxAmt) return false;
+    return true;
+  });
+}
+
+function applyFilters() {
+  const fq  = document.getElementById('f-q');
+  const fc  = document.getElementById('f-cat');
+  const fmn = document.getElementById('f-min');
+  const fmx = document.getElementById('f-max');
+  activeFilters.q      = fq  ? fq.value.trim()                        : '';
+  activeFilters.cat    = fc  ? fc.value                               : '';
+  activeFilters.minAmt = fmn && fmn.value !== '' ? parseFloat(fmn.value) : null;
+  activeFilters.maxAmt = fmx && fmx.value !== '' ? parseFloat(fmx.value) : null;
+
+  renderSpeseMetrics();
+  renderAccordion();
+  renderSubcatFlat();
+  renderTxList();
+  renderSpesaChart();
+
+  // Contatore e stile reset
+  const filtered = getFilteredSpese();
+  const hasFilter = activeFilters.q || activeFilters.cat ||
+                    activeFilters.minAmt !== null || activeFilters.maxAmt !== null;
+  const countEl = document.getElementById('f-count');
+  if (countEl) {
+    countEl.textContent = hasFilter
+      ? `${filtered.length} di ${currentSpese.length} movimenti`
+      : '';
+  }
+  const resetBtn = document.getElementById('f-reset');
+  if (resetBtn) {
+    resetBtn.style.color = hasFilter ? 'var(--accent)' : 'var(--muted)';
+  }
+}
+
+function resetFilters() {
+  activeFilters = { q: '', cat: '', minAmt: null, maxAmt: null };
+  const fq  = document.getElementById('f-q');
+  const fc  = document.getElementById('f-cat');
+  const fmn = document.getElementById('f-min');
+  const fmx = document.getElementById('f-max');
+  if (fq)  fq.value  = '';
+  if (fc)  fc.value  = '';
+  if (fmn) fmn.value = '';
+  if (fmx) fmx.value = '';
+  applyFilters();
+}
+
 function buildCatTotals() {
   const t = {};
   currentSpese.forEach(e => {
