@@ -699,6 +699,18 @@ function buildCatSelects() {
 
   // inv-piatt: estrae piattaforme investimento dai conti (popolato da buildPiattButtons)
   // non serve qui — i pulsanti vengono costruiti dinamicamente in loadInvestimenti
+
+  // f-cat (filtro barra)
+  const fc = document.getElementById('f-cat');
+  if (fc) {
+    const prev = fc.value;
+    fc.innerHTML = '<option value="">Tutte le categorie</option>';
+    Object.keys(CATS).forEach(c => {
+      const e = CATS[c]?.icon || '';
+      fc.innerHTML += `<option value="${c}">${e ? e+' ' : ''}${c}</option>`;
+    });
+    if (prev) fc.value = prev;
+  }
 }
 
 function updateSubcats() {
