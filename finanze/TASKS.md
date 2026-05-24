@@ -96,20 +96,15 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## PRIORITÀ BASSA
 
-### TASK 9 — Esportazione dati
-**Cosa fare:**
-- Bottone "Esporta mese corrente in CSV" nella tab Spese
-- Genera CSV lato client da `currentSpese` e lo scarica
-- Non richiede modifiche a Apps Script
-
----
-
-### TASK 10 — Ricerca e filtri spese
-**Cosa fare:**
-- Campo di ricerca nella vista Lista (filtra per nota/categoria/sottocategoria)
-- Filtro per categoria (dropdown)
-- Filtro per range di importo
-- Tutto lato client su `currentSpese` — no chiamate aggiuntive a Sheets
+### ~~TASK 10 — Ricerca e filtri spese~~ ✅ COMPLETATO
+**Fix applicati:**
+- Barra filtri aggiunta sopra il view-toggle (testo libero, categoria, min/max importo)
+- `activeFilters` come stato globale; `getFilteredSpese()` applica i filtri a `currentSpese`
+- `applyFilters()` aggiorna tutte e 3 le viste + grafico + metriche in un colpo solo
+- Filtri persistenti al cambio mese: `loadSpese()` chiama `applyFilters()` invece delle singole render
+- `buildCatSelects()` popola anche `#f-cat`
+- Label metriche cambia in "Spese filtrate" quando filtri attivi
+- Contatore "N di M movimenti" sotto la barra quando filtri attivi
 
 ---
 
