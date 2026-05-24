@@ -1442,24 +1442,28 @@ function renderDonutChart() {
 
   const invColors  = ['#6ba8ff','#4d8fdd','#3a77c4','#8fc0ff'];
   const pensColors = ['#ffb347','#e09030','#ffc96a'];
+  const contoColors= ['#6bcb8b','#4daa6a','#89e0a5'];
 
-  let labels, vals, colors, subtitle;
-  const piattaforme = Object.keys(lastInvByPiatt);
-  if (piattaforme.length) {
-    const pensPiatt = new Set(CONTI.filter(c => c.tipo === 'Piano pensione').map(c => c.piattaforma));
-    let invIdx = 0, pensIdx = 0;
-    labels  = piattaforme;
-    vals    = piattaforme.map(p => lastInvByPiatt[p].valore);
-    colors  = piattaforme.map(p => pensPiatt.has(p) ? pensColors[pensIdx++ % pensColors.length] : invColors[invIdx++ % invColors.length]);
-    subtitle = 'Allocazione';
-  } else {
-    const contiConSaldo = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.saldo > 0);
-    if (!contiConSaldo.length) return;
-    labels   = contiConSaldo.map(c => c.nome);
-    vals     = contiConSaldo.map(c => c.saldo);
-    colors   = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
-    subtitle = 'Liquidità';
-  }
+  const labels = [], vals = [], colors = [];
+  const pensPiatt = new Set(CONTI.filter(c => c.tipo === 'Piano pensione').map(c => c.piattaforma));
+  let invIdx = 0, pensIdx = 0, contoIdx = 0;
+
+  // Piattaforme investimento e piano pensione
+  Object.entries(lastInvByPiatt).forEach(([p, r]) => {
+    labels.push(p);
+    vals.push(r.valore);
+    colors.push(pensPiatt.has(p) ? pensColors[pensIdx++ % pensColors.length] : invColors[invIdx++ % invColors.length]);
+  });
+
+  // Conti correnti con saldo positivo
+  CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.saldo > 0)
+    .forEach(c => {
+      labels.push(c.nome);
+      vals.push(c.saldo);
+      colors.push(contoColors[contoIdx++ % contoColors.length]);
+    });
+
+  if (!vals.length) return;
 
   if (donutInst) donutInst.destroy();
   donutInst = new Chart(ctx, {
