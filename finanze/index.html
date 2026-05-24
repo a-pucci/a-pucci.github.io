@@ -1344,7 +1344,12 @@ function renderPanoramica(totInv) {
   const totConti   = CONTI
     .filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
     .reduce((s,c) => s + (c.saldo || 0), 0);
-  const patrimonio = totInv + totConti;
+
+  const invPiatt  = new Set(CONTI.filter(c => c.tipo === 'Investimento').map(c => c.piattaforma));
+  const pensPiatt = new Set(CONTI.filter(c => c.tipo === 'Piano pensione').map(c => c.piattaforma));
+  const totInvest  = Object.entries(lastInvByPiatt).filter(([p]) => invPiatt.has(p)).reduce((s,[,r]) => s+r.valore, 0);
+  const totPensione= Object.entries(lastInvByPiatt).filter(([p]) => pensPiatt.has(p)).reduce((s,[,r]) => s+r.valore, 0);
+  const patrimonio = totInvest + totPensione + totConti;
 
   const panEl = document.getElementById('pan-metrics');
   if (panEl) panEl.innerHTML = `
@@ -1354,8 +1359,13 @@ function renderPanoramica(totInv) {
     </div>
     <div class="metric">
       <div class="label">Investimenti</div>
-      <div class="value">€${fmtDec(totInv)}</div>
+      <div class="value" style="color:var(--blue)">€${fmtDec(totInvest)}</div>
     </div>
+    ${totPensione > 0 ? `
+    <div class="metric">
+      <div class="label">Piano pensione</div>
+      <div class="value" style="color:var(--amber)">€${fmtDec(totPensione)}</div>
+    </div>` : ''}
     <div class="metric">
       <div class="label">Saldo conti</div>
       <div class="value">€${fmtDec(totConti)}</div>
@@ -1429,20 +1439,25 @@ function renderTrendAnnoChart() {
 function renderDonutChart() {
   const ctx = document.getElementById('donutChart');
   if (!ctx) return;
-  const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
 
-  // Dati: snapshot investimenti se presenti, altrimenti saldi conti correnti
-  let labels, vals, subtitle;
+  const invColors  = ['#6ba8ff','#4d8fdd','#3a77c4','#8fc0ff'];
+  const pensColors = ['#ffb347','#e09030','#ffc96a'];
+
+  let labels, vals, colors, subtitle;
   const piattaforme = Object.keys(lastInvByPiatt);
   if (piattaforme.length) {
-    labels   = piattaforme;
-    vals     = piattaforme.map(p => lastInvByPiatt[p].valore);
-    subtitle = 'Investimenti';
+    const pensPiatt = new Set(CONTI.filter(c => c.tipo === 'Piano pensione').map(c => c.piattaforma));
+    let invIdx = 0, pensIdx = 0;
+    labels  = piattaforme;
+    vals    = piattaforme.map(p => lastInvByPiatt[p].valore);
+    colors  = piattaforme.map(p => pensPiatt.has(p) ? pensColors[pensIdx++ % pensColors.length] : invColors[invIdx++ % invColors.length]);
+    subtitle = 'Allocazione';
   } else {
     const contiConSaldo = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.saldo > 0);
     if (!contiConSaldo.length) return;
     labels   = contiConSaldo.map(c => c.nome);
     vals     = contiConSaldo.map(c => c.saldo);
+    colors   = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
     subtitle = 'Liquidità';
   }
 
@@ -1457,7 +1472,7 @@ function renderDonutChart() {
   if (legEl) legEl.innerHTML = labels.map((p,i) => `
     <div class="leg-item">
       <span class="leg-label">
-        <span style="width:8px;height:8px;border-radius:2px;background:${colors[i%colors.length]};display:inline-block"></span>
+        <span style="width:8px;height:8px;border-radius:2px;background:${colors[i]};display:inline-block"></span>
         ${p}
       </span>
       <span class="leg-val">€${fmtDec(vals[i])}</span>
