@@ -826,12 +826,16 @@ function updateMonthLabel() {
 }
 
 function renderSpeseMetrics() {
-  const tot = currentSpese.reduce((s,r)=>s+r.importo,0);
-  const avg = currentSpese.length ? tot/currentSpese.length : 0;
+  const spese = getFilteredSpese();
+  const hasFilter = activeFilters.q || activeFilters.cat ||
+                    activeFilters.minAmt !== null || activeFilters.maxAmt !== null;
+  const tot = spese.reduce((s,r)=>s+r.importo,0);
+  const avg = spese.length ? tot/spese.length : 0;
+  const label = hasFilter ? 'Spese filtrate' : 'Spese totali';
   const _sm = document.getElementById('spese-metrics'); if(_sm) _sm.innerHTML = `
-    <div class="metric"><div class="label">Spese totali</div><div class="value">€${fmt(tot)}</div></div>
-    <div class="metric"><div class="label">Transazioni</div><div class="value">${currentSpese.length}</div></div>
-    <div class="metric"><div class="label">Media</div><div class="value">${currentSpese.length?'€'+fmt(avg):'—'}</div></div>`;
+    <div class="metric"><div class="label">${label}</div><div class="value">€${fmt(tot)}</div></div>
+    <div class="metric"><div class="label">Transazioni</div><div class="value">${spese.length}</div></div>
+    <div class="metric"><div class="label">Media</div><div class="value">${spese.length?'€'+fmt(avg):'—'}</div></div>`;
 }
 
 function getFilteredSpese() {
@@ -978,8 +982,9 @@ function renderSubcatFlat() {
 function renderTxList() {
   const el = document.getElementById('tx-list');
   if (!el) return;
-  if (!currentSpese.length) { el.innerHTML='<div class="empty">Nessun movimento</div>'; return; }
-  el.innerHTML = [...currentSpese].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,30).map(e => {
+  const spese = getFilteredSpese();
+  if (!spese.length) { el.innerHTML='<div class="empty">Nessun movimento</div>'; return; }
+  el.innerHTML = [...spese].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,30).map(e => {
     const color = CATS[e.categoria]?.color||'#888680';
     const d = new Date(e.data);
     const year = e.data ? e.data.slice(0,4) : currentYear;
