@@ -603,29 +603,6 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Importa spese da CSV</div>
-      <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
-        Formato atteso: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px">Data,Importo,Categoria,Sottocategoria,Nota</code><br>
-        Le righe vengono distribuite automaticamente per anno su Google Sheets.
-      </div>
-      <div class="form-row">
-        <label>File CSV</label>
-        <input type="file" id="spese-csv-file" accept=".csv" onchange="loadSpeseCsv(this)">
-      </div>
-      <div id="spese-csv-preview" style="display:none;margin-top:12px">
-        <div id="spese-csv-info" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
-        <div style="overflow-x:auto;margin-bottom:12px">
-          <table id="spese-csv-table" style="width:100%;font-size:11px;border-collapse:collapse"></table>
-        </div>
-        <button class="btn-primary" id="spese-csv-btn" onclick="importSpeseCsv()">
-          <i class="ti ti-upload"></i> <span id="spese-csv-btn-label">Importa</span>
-        </button>
-        <div class="msg ok" id="spese-csv-ok"></div>
-        <div class="msg err" id="spese-csv-err"></div>
-      </div>
-    </div>
-
-    <div class="card">
       <div class="card-title">Importa Moneyfarm Risparmi</div>
       <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
         Formato atteso: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px">Data,Controvalore,Ammontare investito</code><br>
@@ -1271,29 +1248,42 @@ function selectPiatt(p, btn) {
   btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--text)'; btn.style.borderColor = 'var(--border2)';
 }
 
+function weekStartISO(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+function groupByWeek(points) {
+  const wk = {};
+  points.forEach(pt => { wk[weekStartISO(pt.x)] = pt.y; });
+  return Object.entries(wk).sort((a,b) => new Date(a[0]) - new Date(b[0])).map(([x,y]) => ({x, y}));
+}
+
 function renderInvChart(data) {
   if (!data.length) return;
   const colors = ['#c9f542','#6ba8ff','#6bcb8b','#ffb347','#ff6b6b'];
   const byP = {};
   [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => {
     if (!byP[r.piattaforma]) byP[r.piattaforma] = [];
-    byP[r.piattaforma].push({x: r.data, y: r.valore});
+    byP[r.piattaforma].push({x: String(r.data).slice(0,10), y: r.valore});
   });
   const piattaforme = Object.keys(byP);
   if (invChartInst) invChartInst.destroy();
   invChartInst = new Chart(document.getElementById('invChart'), {
     type: 'line',
     data: { datasets: piattaforme.map((p,i) => ({
-      label: p, data: byP[p],
+      label: p, data: groupByWeek(byP[p]),
       borderColor: colors[i%colors.length], backgroundColor: 'transparent',
-      tension: .4, pointRadius: 4, pointBackgroundColor: colors[i%colors.length], borderWidth: 2
+      tension: .4, pointRadius: 3, pointBackgroundColor: colors[i%colors.length], borderWidth: 2
     }))},
     options: {
       responsive: true, maintainAspectRatio: false,
       parsing: { xAxisKey: 'x', yAxisKey: 'y' },
       plugins: { legend: { display: false } },
       scales: {
-        x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+        x: { type: 'time', time: { unit: 'week', displayFormats: { week: 'dd MMM yy' } },
              grid: { display: false }, ticks: { color: '#888680', font: { size: 11 } } },
         y: { grid: { color: 'rgba(255,255,255,.05)' },
              ticks: { callback: v => '€'+fmt(v), color: '#888680', font: { size: 11 } } }
@@ -1644,7 +1634,7 @@ function renderPatrimonioChart(data) {
     }
     return;
   }
-  // Aggrega tutti i valori per data (somma piattaforme)
+  // Aggrega tutti i valori per data (somma piattaforme), poi raggruppa per settimana
   const byDate = {};
   data.forEach(r => {
     const d = r.data instanceof Date
@@ -1653,9 +1643,10 @@ function renderPatrimonioChart(data) {
     if (!byDate[d]) byDate[d] = 0;
     byDate[d] += Number(r.valore) || 0;
   });
-  const points = Object.entries(byDate)
+  const daily = Object.entries(byDate)
     .sort((a,b) => new Date(a[0]) - new Date(b[0]))
     .map(([d,v]) => ({ x: d, y: v }));
+  const points = groupByWeek(daily);
   if (points.length < 2) {
     ctx.style.display = 'none';
     const wrap = ctx.parentElement;
@@ -1685,7 +1676,7 @@ function renderPatrimonioChart(data) {
       parsing: { xAxisKey: 'x', yAxisKey: 'y' },
       plugins: { legend: { display: false } },
       scales: {
-        x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+        x: { type: 'time', time: { unit: 'week', displayFormats: { week: 'dd MMM yy' } },
              grid: { display: false }, ticks: { color: '#888680', font: { size: 11 } } },
         y: { grid: { color: 'rgba(255,255,255,.05)' },
              ticks: { callback: v => '€'+fmt(v), color: '#888680', font: { size: 11 } } }
