@@ -1008,11 +1008,7 @@ async function deleteMovimento(sheetKey, id, year) {
     if (res.ok) {
       if (sheetKey === 'spese') {
         currentSpese = currentSpese.filter(r => String(r.id) !== String(id));
-        renderSpeseMetrics();
-        renderAccordion();
-        renderSubcatFlat();
-        renderTxList();
-        renderSpesaChart();
+        applyFilters();
       } else if (sheetKey === 'entrate') {
         currentEntrate = currentEntrate.filter(r => String(r.id) !== String(id));
         renderEntrate();
