@@ -896,7 +896,7 @@ function resetFilters() {
 
 function buildCatTotals() {
   const t = {};
-  currentSpese.forEach(e => {
+  getFilteredSpese().forEach(e => {
     if (!t[e.categoria]) t[e.categoria] = {total:0, subs:{}};
     t[e.categoria].total += e.importo;
     const sub = e.sottocategoria || 'Altro';
@@ -955,7 +955,7 @@ function toggleAcc(bodyId, chevId) {
 
 function renderSubcatFlat() {
   const flat = {};
-  currentSpese.forEach(e => {
+  getFilteredSpese().forEach(e => {
     const k = (e.categoria||'')+'\u00b7'+(e.sottocategoria||'Altro');
     if (!flat[k]) flat[k]={cat:e.categoria,sub:e.sottocategoria||'Altro',amt:0};
     flat[k].amt += e.importo;
