@@ -255,6 +255,7 @@ function doGet(e) {
       case 'getInvestimenti': result = getInvestimenti_(params); break;
       case 'getBudget':       result = getBudget_(params); break;
       case 'getSummary':      result = getSummary_(params);break;
+      case 'getSummaryAnno':  result = getSummaryAnno_(params); break;
       default:
         result = { error: 'Azione non riconosciuta: ' + action };
     }
@@ -418,6 +419,30 @@ function getSummary_(params) {
       investimentiByPiattaforma: invByPiattaforma
     }
   };
+}
+
+function getSummaryAnno_(params) {
+  const year = params.year || CONFIG.YEAR;
+  const speseMensili   = new Array(12).fill(0);
+  const entrateMensili = new Array(12).fill(0);
+
+  try {
+    const spese = readSheetByName_('Spese_' + year);
+    spese.forEach(r => {
+      const m = new Date(r[1]).getMonth(); // r[1] = Data
+      speseMensili[m] += parseFloat(r[2]) || 0; // r[2] = Importo
+    });
+  } catch(e) {}
+
+  try {
+    const entrate = readSheetByName_('Entrate_' + year);
+    entrate.forEach(r => {
+      const m = new Date(r[1]).getMonth();
+      entrateMensili[m] += parseFloat(r[2]) || 0;
+    });
+  } catch(e) {}
+
+  return { ok: true, data: { spese: speseMensili, entrate: entrateMensili } };
 }
 
 // ── Scritture ────────────────────────────────────────────────
