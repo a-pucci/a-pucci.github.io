@@ -350,6 +350,7 @@
         <div class="donut-wrap">
           <canvas id="donutChart" width="100" height="100" role="img" aria-label="Allocazione patrimonio">Caricamento</canvas>
           <div class="leg" id="donut-legend"><div class="skel" style="height:60px"></div></div>
+          <div id="donut-summary"></div>
         </div>
       </div>
       <div class="card">
@@ -1473,17 +1474,31 @@ function renderDonutChart() {
   });
 
   const totale = vals.reduce((s, v) => s + v, 0);
+  const pct = v => totale > 0 ? (v / totale * 100).toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}) : '0,00';
+
   const legEl = document.getElementById('donut-legend');
-  if (legEl) legEl.innerHTML = labels.map((p,i) => {
-    const pct = totale > 0 ? (vals[i] / totale * 100).toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}) : '0,00';
-    return `<div class="leg-item">
+  if (legEl) legEl.innerHTML = labels.map((p,i) => `
+    <div class="leg-item">
       <span class="leg-label">
         <span style="width:8px;height:8px;border-radius:2px;background:${colors[i]};display:inline-block"></span>
         ${p}
       </span>
-      <span class="leg-val">${pct}%</span>
+      <span class="leg-val">${pct(vals[i])}%</span>
+    </div>`).join('');
+
+  // Aggregati
+  const contiTot = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.saldo > 0)
+    .reduce((s,c) => s + c.saldo, 0);
+  const invTot  = Object.entries(lastInvByPiatt).filter(([p]) => !pensPiatt.has(p)).reduce((s,[,r]) => s+r.valore, 0);
+  const pensTot = Object.entries(lastInvByPiatt).filter(([p]) =>  pensPiatt.has(p)).reduce((s,[,r]) => s+r.valore, 0);
+
+  const summEl = document.getElementById('donut-summary');
+  if (summEl) summEl.innerHTML = `
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:3px">
+      <div class="leg-item"><span class="leg-label" style="color:var(--green)">Saldo conti</span><span class="leg-val">${pct(contiTot)}%</span></div>
+      <div class="leg-item"><span class="leg-label" style="color:var(--blue)">Investimenti</span><span class="leg-val">${pct(invTot)}%</span></div>
+      ${pensTot > 0 ? `<div class="leg-item"><span class="leg-label" style="color:var(--amber)">Piano pensione</span><span class="leg-val">${pct(pensTot)}%</span></div>` : ''}
     </div>`;
-  }).join('');
 }
 
 function renderPatrimonioChart(data) {
