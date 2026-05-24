@@ -76,20 +76,21 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ---
 
-### TASK 7 — Panoramica: grafico andamento mensile spese/entrate
-**Cosa fare:**
-- Grafico a barre o linee: ultimi 6 mesi, spese vs entrate
-- Richiede chiamate multiple a `getSpese` e `getEntrate` per mesi diversi
-- Oppure implementare `getSummaryAnno` in Apps Script che restituisce tutti i mesi in una chiamata sola
+### ~~TASK 7 — Panoramica: grafico andamento mensile spese/entrate~~ ✅ COMPLETATO
+**Fix applicati:**
+- `getSummaryAnno_` in Apps Script: legge Spese e Entrate dell'anno, raggruppa per mese, ritorna 12 somme mensili
+- `loadSummaryAnno()` chiamata in parallelo in `reloadAll()` (una sola chiamata API)
+- `renderTrendAnnoChart()`: line chart Chart.js entrate (verde) vs spese (rosso), fill leggero, scala € sull'asse Y
+- Usa `MONTHS_SHORT` esistente per le etichette; null/shape guard preserva il canvas per render futuri
 
 ---
 
-### TASK 8 — Mobile UX miglioramenti
-**Cosa fare:**
-- Dopo il salvataggio di una spesa, mostrare un feedback visivo più evidente (es. animazione ✓)
-- Input importo: su mobile il tastierino numerico deve aprirsi automaticamente (`autofocus` + `inputmode="decimal"`)
-- Swipe tra tab (opzionale, se fattibile senza librerie)
-- PWA: aggiungere `manifest.json` e `<meta>` tags per installazione come app su home screen iOS/Android
+### ~~TASK 8 — Mobile UX miglioramenti~~ ✅ COMPLETATO
+**Fix applicati:**
+- Nav icon-only sotto 380px (`@media (max-width: 380px)` nasconde gli `<span>` di testo)
+- Feedback visivo salvataggio: bottone diventa verde con "✓ Salvata" per 1.8s dopo `addSpesa()` con successo
+- PWA: `manifest.json` + meta tag per installazione come app su home screen iOS/Android
+- `icon.svg` creata per icona app (€ su sfondo nero)
 
 ---
 
