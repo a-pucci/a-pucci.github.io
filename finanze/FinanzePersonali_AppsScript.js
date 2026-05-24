@@ -279,6 +279,7 @@ function doPost(e) {
       case 'addCategoria':    result = addCategoria_(body);    break;
       case 'addConto':        result = addConto_(body);        break;
       case 'deleteRow':       result = deleteRow_(body);       break;
+      case 'updateRow':       result = updateRow_(body);       break;
       default:
         result = { error: 'Azione non riconosciuta: ' + action };
     }
@@ -515,6 +516,31 @@ function updateBudget_(body) {
     }
   });
   return { ok: true };
+}
+
+function updateRow_(body) {
+  // body: { sheetKey, year, id, fields[] }
+  // fields per spese:   [Data, Importo, Categoria, Sottocategoria, Nota, Conto, Metodo_Pagamento]
+  // fields per entrate: [Data, Importo, Tipo, Nota, Conto]
+  const year = body.year || CONFIG.YEAR;
+  const keyMap = { spese: 'Spese_' + year, entrate: 'Entrate_' + year };
+  const sheetName = keyMap[body.sheetKey];
+  if (!sheetName) return { error: 'Sheet non trovato' };
+
+  const props = PropertiesService.getScriptProperties();
+  const keyProp = 'ID_' + body.sheetKey.toUpperCase();
+  const ss    = SpreadsheetApp.openById(props.getProperty(keyProp));
+  const sheet = ss.getSheetByName(sheetName);
+  const data  = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(body.id)) {
+      // Aggiorna le colonne a partire dalla 2 (indice 1), mantenendo l'ID in colonna 1
+      sheet.getRange(i + 1, 2, 1, body.fields.length).setValues([body.fields]);
+      return { ok: true };
+    }
+  }
+  return { error: 'Riga non trovata' };
 }
 
 function deleteRow_(body) {

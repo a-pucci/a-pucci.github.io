@@ -52,32 +52,27 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ---
 
-### TASK 4 — Eliminazione movimenti
-**Problema:** non c'è modo di cancellare una spesa o entrata inserita per errore.
-**Cosa fare:**
-- Nella vista Lista (tab Spese) aggiungere bottone elimina su ogni riga
-- Conferma prima di eliminare ("Sei sicuro?")
-- Chiamare `deleteRow` via POST verso Apps Script
-- Fare lo stesso per la lista Entrate
-- Lo script ha già `deleteRow_()` implementato
+### ~~TASK 4 — Eliminazione movimenti~~ ✅ COMPLETATO
+**Fix applicati:**
+- Bottone ✕ aggiunto su ogni riga di Spese (`renderTxList`) e Entrate (`renderEntrate`)
+- Conferma `confirm()` prima dell'eliminazione
+- Chiamata `deleteRow` via POST verso Apps Script con `{ sheetKey, id, year }`
+- Rimozione immediata da `currentSpese`/`currentEntrate` + re-render senza reload
+- `renderEntrate` estratta da `loadEntrate` come funzione separata riutilizzabile
+- CSS `.del-btn` aggiunto: visibile su hover con colore rosso
 
 ---
 
 ## PRIORITÀ MEDIA
 
-### TASK 5 — Modifica movimenti
-**Cosa fare:**
-- Permettere la modifica di una spesa già inserita (tap sulla riga → form precompilato)
-- Aggiungere azione POST `updateRow` in Apps Script
-- La riga viene trovata per ID e aggiornata con i nuovi valori
-
----
-
-### TASK 6 — Budget: sincronizzazione automatica con nuove categorie
-**Problema:** quando si aggiunge una nuova categoria da Impostazioni, non viene aggiunta automaticamente al foglio Budget.
-**Lo script ha già questa logica in `addCategoria_()` ma va verificata:**
-- Testare che aggiungendo una categoria da UI appaia nel form Budget
-- Se manca, aggiungere la riga al Budget con valori 0 per tutti i mesi
+### ~~TASK 5 — Modifica movimenti~~ ✅ COMPLETATO
+**Fix applicati:**
+- Bottone ✎ aggiunto su ogni riga di Spese e Entrate, accanto al ✕ elimina
+- Modal overlay con form precompilato (spesa: importo, cat, subcat, conto, nota, data; entrata: importo, tipo, conto, nota, data)
+- `openEditMovimento(sheetKey, id, year)` popola il form dai dati in memoria (`currentSpese`/`currentEntrate`)
+- `saveEditMovimento()` chiama `updateRow` via POST → ricarica la lista aggiornata
+- `updateRow_` aggiunto in Apps Script: trova la riga per ID e aggiorna le colonne 2+ con i nuovi valori
+- Chiusura modal cliccando fuori o sul ✕
 
 ---
 
