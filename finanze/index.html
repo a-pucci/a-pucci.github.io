@@ -800,11 +800,7 @@ async function loadSpese() {
   const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
   if (!res.ok) throw new Error(res.error);
   currentSpese = res.data;
-  renderSpeseMetrics();
-  renderAccordion();
-  renderSubcatFlat();
-  renderTxList();
-  renderSpesaChart();
+  applyFilters();
 
   // Aggiorna summary mobile
   const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
