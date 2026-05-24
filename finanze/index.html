@@ -208,13 +208,18 @@
   select option { background: var(--surface2); }
 
   /* ── BUTTONS ── */
+  .btn-success {
+    background: var(--green) !important;
+    color: #0f0f0f !important;
+    border-color: var(--green) !important;
+  }
   .btn-primary {
     width: 100%; padding: 11px; margin-top: 10px;
     background: var(--accent); color: #0f0f0f;
     border: none; border-radius: var(--radius); font-family: var(--sans);
     font-size: 14px; font-weight: 500; cursor: pointer;
     display: flex; align-items: center; justify-content: center; gap: 6px;
-    transition: opacity .15s;
+    transition: background 0.3s, color 0.3s, border-color 0.3s, opacity 0.15s;
   }
   .btn-primary:hover { opacity: .88; }
   .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
@@ -1227,12 +1232,19 @@ async function addSpesa() {
     if (res.ok) {
       const aEl = document.getElementById('q-amount'); if (aEl) aEl.value = '';
       const nEl = document.getElementById('q-note'); if (nEl) nEl.value = '';
-      showMsg('spesa-ok');
+      if (btn) {
+        btn.classList.add('btn-success');
+        btn.innerHTML = '✓ Salvata';
+        setTimeout(() => {
+          btn.classList.remove('btn-success');
+          btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+        }, 1800);
+      }
       await loadSpese();
     } else { showMsg('spesa-err', res.error || 'Errore'); }
   } catch(err) { showMsg('spesa-err', err.message); }
 
-  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa'; }
+  if (btn) { btn.disabled = false; if (!btn.classList.contains('btn-success')) btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa'; }
 }
 
 // ── UI HELPERS ───────────────────────────────────────────────
