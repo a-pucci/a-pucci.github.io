@@ -1472,15 +1472,18 @@ function renderDonutChart() {
     options: { responsive: false, cutout: '60%', plugins: { legend: { display: false } } }
   });
 
+  const totale = vals.reduce((s, v) => s + v, 0);
   const legEl = document.getElementById('donut-legend');
-  if (legEl) legEl.innerHTML = labels.map((p,i) => `
-    <div class="leg-item">
+  if (legEl) legEl.innerHTML = labels.map((p,i) => {
+    const pct = totale > 0 ? (vals[i] / totale * 100).toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}) : '0,00';
+    return `<div class="leg-item">
       <span class="leg-label">
         <span style="width:8px;height:8px;border-radius:2px;background:${colors[i]};display:inline-block"></span>
         ${p}
       </span>
-      <span class="leg-val">€${fmtDec(vals[i])}</span>
-    </div>`).join('');
+      <span class="leg-val">${pct}%</span>
+    </div>`;
+  }).join('');
 }
 
 function renderPatrimonioChart(data) {
