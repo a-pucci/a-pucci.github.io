@@ -602,12 +602,58 @@
       <div class="msg err" id="cat-err"></div>
     </div>
 
+    <div class="card">
+      <div class="card-title">Importa spese da CSV</div>
+      <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
+        Formato atteso: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px">Data,Importo,Categoria,Sottocategoria,Nota</code><br>
+        Le righe vengono distribuite automaticamente per anno su Google Sheets.
+      </div>
+      <div class="form-row">
+        <label>File CSV</label>
+        <input type="file" id="spese-csv-file" accept=".csv" onchange="loadSpeseCsv(this)">
+      </div>
+      <div id="spese-csv-preview" style="display:none;margin-top:12px">
+        <div id="spese-csv-info" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+        <div style="overflow-x:auto;margin-bottom:12px">
+          <table id="spese-csv-table" style="width:100%;font-size:11px;border-collapse:collapse"></table>
+        </div>
+        <button class="btn-primary" id="spese-csv-btn" onclick="importSpeseCsv()">
+          <i class="ti ti-upload"></i> <span id="spese-csv-btn-label">Importa</span>
+        </button>
+        <div class="msg ok" id="spese-csv-ok"></div>
+        <div class="msg err" id="spese-csv-err"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Importa Moneyfarm Risparmi</div>
+      <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
+        Formato atteso: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px">Data,Controvalore,Ammontare investito</code><br>
+        Importa come snapshots investimento — piattaforma: Moneyfarm, conto: Risparmi.
+      </div>
+      <div class="form-row">
+        <label>File CSV</label>
+        <input type="file" id="mf-csv-file" accept=".csv" onchange="loadMfCsv(this)">
+      </div>
+      <div id="mf-csv-preview" style="display:none;margin-top:12px">
+        <div id="mf-csv-info" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+        <div style="overflow-x:auto;margin-bottom:12px">
+          <table id="mf-csv-table" style="width:100%;font-size:11px;border-collapse:collapse"></table>
+        </div>
+        <button class="btn-primary" id="mf-csv-btn" onclick="importMfCsv()">
+          <i class="ti ti-upload"></i> <span id="mf-csv-btn-label">Importa</span>
+        </button>
+        <div class="msg ok" id="mf-csv-ok"></div>
+        <div class="msg err" id="mf-csv-err"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbwIBJx_YGuETpjlI0nmgcP8Y1pWJt0pDDgPlSNmFxgxKhmIwe6pZVcZ-dKrD3_BC6HQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyDLp-_55rEWFptBM93KXkDZ-d1JoQEqSeGfsCE0XicqVrQtmFn9xCLSdgB7inFXps/exec';
 
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
@@ -1699,6 +1745,140 @@ function fmt(n) {
 }
 function fmtDec(n) {
   return Number(n).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// ── CSV IMPORTER ─────────────────────────────────────────────
+let speseCsvRows = [];
+let mfCsvRows    = [];
+
+function parseCSV(text) {
+  return text.trim().split('\n').map(line => {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    cols.push(cur.trim());
+    return cols;
+  });
+}
+
+function renderImportTable(tableId, headers, rows) {
+  const el = document.getElementById(tableId); if (!el) return;
+  const td = 'padding:3px 8px;border-bottom:1px solid var(--border);white-space:nowrap';
+  let h = `<thead><tr>${headers.map(c=>`<th style="${td};color:var(--muted)">${c}</th>`).join('')}</tr></thead><tbody>`;
+  rows.slice(0, 8).forEach(r => { h += `<tr>${r.map(c=>`<td style="${td}">${c}</td>`).join('')}</tr>`; });
+  if (rows.length > 8) h += `<tr><td colspan="${headers.length}" style="${td};color:var(--hint)">… e altre ${rows.length - 8} righe</td></tr>`;
+  el.innerHTML = h + '</tbody>';
+}
+
+function loadSpeseCsv(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const parsed = parseCSV(e.target.result);
+    const header = parsed[0];
+    speseCsvRows = parsed.slice(1).filter(r => r.length >= 2 && r[0]);
+    const byYear = {};
+    speseCsvRows.forEach(r => { const y = (r[0]||'').slice(0,4); byYear[y] = (byYear[y]||0)+1; });
+    const yearSummary = Object.entries(byYear).sort().map(([y,n])=>`${y}: ${n}`).join(' · ');
+    const infoEl = document.getElementById('spese-csv-info');
+    if (infoEl) infoEl.textContent = `${speseCsvRows.length} righe — ${yearSummary}`;
+    const lbl = document.getElementById('spese-csv-btn-label');
+    if (lbl) lbl.textContent = `Importa ${speseCsvRows.length} spese`;
+    renderImportTable('spese-csv-table', header, speseCsvRows);
+    const prev = document.getElementById('spese-csv-preview'); if (prev) prev.style.display = '';
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+async function importSpeseCsv() {
+  if (!speseCsvRows.length) return;
+  const btn = document.getElementById('spese-csv-btn');
+  const lbl = document.getElementById('spese-csv-btn-label');
+  if (btn) btn.disabled = true;
+
+  const byYear = {};
+  speseCsvRows.forEach(r => {
+    const year = (r[0]||'').slice(0,4); if (!/^\d{4}$/.test(year)) return;
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push({ data: r[0], importo: parseFloat(r[1])||0, categoria: r[2]||'', sottocategoria: r[3]||'', nota: r[4]||'' });
+  });
+
+  let total = 0;
+  try {
+    for (const [year, rows] of Object.entries(byYear).sort()) {
+      if (lbl) lbl.textContent = `Importando ${year}… (${rows.length} righe)`;
+      const res = await apiPost({ action: 'bulkImportSpese', rows });
+      if (!res.ok) throw new Error(res.error || 'Errore anno ' + year);
+      total += res.imported;
+    }
+    const okEl = document.getElementById('spese-csv-ok');
+    if (okEl) { okEl.textContent = `✓ Importate ${total} spese`; okEl.style.display = 'block'; }
+    speseCsvRows = [];
+    const fi = document.getElementById('spese-csv-file'); if (fi) fi.value = '';
+    const prev = document.getElementById('spese-csv-preview'); if (prev) prev.style.display = 'none';
+  } catch(err) {
+    showMsg('spese-csv-err', err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+    if (lbl) lbl.textContent = `Importa`;
+  }
+}
+
+function loadMfCsv(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const parsed = parseCSV(e.target.result);
+    const header = parsed[0];
+    mfCsvRows = parsed.slice(1).filter(r => r.length >= 3 && r[0]);
+    const byYear = {};
+    mfCsvRows.forEach(r => { const y = (r[0]||'').slice(0,4); byYear[y] = (byYear[y]||0)+1; });
+    const yearSummary = Object.entries(byYear).sort().map(([y,n])=>`${y}: ${n}`).join(' · ');
+    const infoEl = document.getElementById('mf-csv-info');
+    if (infoEl) infoEl.textContent = `${mfCsvRows.length} snapshot — ${yearSummary}`;
+    const lbl = document.getElementById('mf-csv-btn-label');
+    if (lbl) lbl.textContent = `Importa ${mfCsvRows.length} snapshot`;
+    renderImportTable('mf-csv-table', header, mfCsvRows);
+    const prev = document.getElementById('mf-csv-preview'); if (prev) prev.style.display = '';
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+async function importMfCsv() {
+  if (!mfCsvRows.length) return;
+  const btn = document.getElementById('mf-csv-btn');
+  const lbl = document.getElementById('mf-csv-btn-label');
+  if (btn) btn.disabled = true;
+  if (lbl) lbl.textContent = 'Importando…';
+
+  const rows = mfCsvRows.map(r => {
+    const valore = parseFloat(r[1]) || 0;
+    const investito = parseFloat(r[2]) || 0;
+    return {
+      data: r[0], valore, investito,
+      rendimentoEur: parseFloat((valore - investito).toFixed(2)),
+      rendimentoPct: investito > 0 ? parseFloat(((valore - investito) / investito * 100).toFixed(2)) : 0,
+    };
+  });
+
+  try {
+    const res = await apiPost({ action: 'bulkImportInvestimenti', rows, piattaforma: 'Moneyfarm', conto: 'Risparmi', strumento: '' });
+    if (!res.ok) throw new Error(res.error || 'Errore import');
+    const okEl = document.getElementById('mf-csv-ok');
+    if (okEl) { okEl.textContent = `✓ Importati ${res.imported} snapshot`; okEl.style.display = 'block'; }
+    mfCsvRows = [];
+    const fi = document.getElementById('mf-csv-file'); if (fi) fi.value = '';
+    const prev = document.getElementById('mf-csv-preview'); if (prev) prev.style.display = 'none';
+  } catch(err) {
+    showMsg('mf-csv-err', err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+    if (lbl) lbl.textContent = 'Importa';
+  }
 }
 
 // Auto-start
