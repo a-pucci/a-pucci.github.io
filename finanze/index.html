@@ -415,6 +415,19 @@
       <div class="metric"><div class="label">Media</div><div class="skel" style="height:26px;width:65%;margin-top:6px"></div></div>
     </div>
 
+    <div id="filter-bar" class="card" style="padding:10px 14px;margin-bottom:1rem">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="f-q" type="search" placeholder="Cerca nota / categoria…" style="flex:2;min-width:120px" oninput="applyFilters()">
+        <select id="f-cat" style="flex:1;min-width:100px" onchange="applyFilters()">
+          <option value="">Tutte le categorie</option>
+        </select>
+        <input id="f-min" type="number" placeholder="Min €" style="width:70px" min="0" step="0.01" oninput="applyFilters()">
+        <input id="f-max" type="number" placeholder="Max €" style="width:70px" min="0" step="0.01" oninput="applyFilters()">
+        <button id="f-reset" onclick="resetFilters()" style="color:var(--muted);background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;cursor:pointer;font-size:12px;transition:color .15s">✕ Reset</button>
+      </div>
+      <div id="f-count" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+    </div>
+
     <div class="view-toggle">
       <button class="active" onclick="setView('cat',this)">Categoria</button>
       <button onclick="setView('subcat',this)">Sottocategoria</button>
