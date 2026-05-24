@@ -81,6 +81,9 @@ Body JSON con campo `action`:
 - `addConto` → `{ action, nome, tipo, piattaforma, iban, valuta, note }`
 - `updateBudget` → `{ action, year, righe: [{ categoria, sottocategoria, mensili: [12 valori] }] }`
 - `deleteRow` → `{ action, sheetKey, year, id }`
+- `updateRow` → `{ action, sheetKey, year, id, fields: {...} }`
+- `bulkImportSpese` → `{ action, rows: [{ data, importo, categoria, sottocategoria, nota }] }` — inserisce batch per anno, non sovrascrive dati esistenti
+- `bulkImportInvestimenti` → `{ action, rows: [{ data, valore, investito, rendimentoEur?, rendimentoPct? }], piattaforma, conto, strumento? }` — inserisce batch per anno, calcola rendimento se non fornito
 
 ### Note importanti sullo script
 - Gli ID dei file Sheets sono salvati in `PropertiesService.getScriptProperties()`
@@ -113,18 +116,27 @@ let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
 - `renderSubcatFlat()` — vista spese per sottocategoria
 - `renderTxList()` — lista movimenti
 - `renderSpesaChart()` — donut chart spese
-- `renderInvChart(data)` — line chart investimenti per piattaforma
+- `renderInvChart(data)` — line chart investimenti per piattaforma, punti aggregati per settimana
+- `renderPatrimonioChart(data)` — line chart andamento patrimonio totale (tab Panoramica), punti aggregati per settimana
+- `renderTrendAnnoChart()` — line chart entrate vs spese mensili (tab Panoramica)
+- `renderDonutChart()` — donut allocazione piattaforme (tab Panoramica)
 - `buildPiattButtons()` — bottoni selezione piattaforma nel form snapshot
 - `addSpesa()` / `addEntrata()` / `addInvestimento()` / `saveBudget()`
 - `addCategoria()` / `addConto()`
+- `openEditMovimento()` / `saveEditMovimento()` — modal modifica spese/entrate
+- `deleteMovimento()` — elimina riga con conferma
+- `applyFilters()` — aggiorna tutte le viste spese con filtri attivi (testo, categoria, min/max importo)
+- `weekStartISO(dateStr)` / `groupByWeek(points)` — helper aggregazione settimanale per grafici investimenti
+- `loadSpeseCsv()` / `importSpeseCsv()` — importer CSV spese (tab Impostazioni)
+- `loadMfCsv()` / `importMfCsv()` — importer CSV Moneyfarm Risparmi (tab Impostazioni)
 
 ### Tab presenti (nav)
-1. **Panoramica** — metriche aggregate, donut allocazione, lista conti
-2. **Spese** — quick add + accordion per categoria/sottocategoria/lista + grafici
-3. **Investimenti** — snapshot rapido per piattaforma + grafico andamento
+1. **Panoramica** — metriche aggregate (patrimonio, investimenti, saldo conti, spese mese, risparmio), donut allocazione piattaforme, grafico andamento patrimonio (settimanale), grafico trend mensile entrate/spese, lista conti
+2. **Spese** — quick add + filtri (testo, categoria, min/max) + accordion/flat/lista + grafico donut; filtri persistenti al cambio mese
+3. **Investimenti** — snapshot rapido per piattaforma + grafico andamento per piattaforma (settimanale)
 4. **Budget** — budget vs reale per mese + form modifica budget
 5. **Entrate** — form aggiunta entrata + lista movimenti
-6. **Impostazioni** — aggiungi categoria/sottocategoria/conto, URL script
+6. **Impostazioni** — aggiungi categoria/sottocategoria/conto, URL script, importa Moneyfarm Risparmi da CSV
 
 ### CSS Variables (tema dark)
 ```css
@@ -174,14 +186,20 @@ apiPost(body)  // fetch POST verso Apps Script
 ---
 
 ## Piattaforme investimento dell'utente
-- **Trade Republic** — ETF (MSCI World, S&P 500), bond, azioni singole
-- **Moneyfarm** — portafoglio 5, profilo moderato, PAC mensile €500
+- **Trade Republic** — ETF (MSCI World, S&P 500), bond, azioni singole (snapshot manuali)
+- **Moneyfarm** — portafoglio Risparmi (PAC mensile €500) + portafoglio Pensione (manuale)
 
 ## Conti correnti dell'utente
 - Intesa Sanpaolo
 - N26
 
----
+## File accessori (non nel repo)
+- `finanze/spese_import.csv` — 2249 righe generate da `Money Manager backup.xlsx` (2023-02-01 → 2026-05-24), pronte per l'import bulk tramite `bulkImportSpese`
+- `finanze/convert_backup.js` — script Node.js che ha generato il CSV dal backup; richiede `node_modules/xlsx`
+
+## Note sulle categorie
+Le categorie nel Sheets `Finanza/Categorie` differiscono dai `DEFAULT_CATEGORIES` dello script (che sono i default di setup). Le categorie reali dell'utente sono:
+Auto (Carburante/Parcheggio/Manutenzione/Assicurazione/Bollo/Pedaggio), Casa (Bollette/Internet/Spesa/Telefono), Cibo (Generale/Pausa pranzo), Salute (Farmacia/Visite mediche), Svago (Cinema & teatro/Giochi/Sport/Viaggi/Libri & media/Concerti), Shopping (Abbigliamento/Elettronica/Regali/Casa & giardino/Cura corpo), Abbonamenti (Netflix/Spotify/Crunchyroll/Amazon Prime/Software), Trasporti (Mezzi pubblici/Treno), Investimenti (Risparmi/Pensione), Altro (Istruzione/Banca & comm./Tasse/Regali/Non categ.)
 
 ## Problemi noti / Fix applicati
 - `getUi()` rimosso da `setupCompleto()` — non disponibile fuori da Sheets
@@ -189,4 +207,5 @@ apiPost(body)  // fetch POST verso Apps Script
 - Varie funzioni JS andate perse durante refactoring iterativo — reinserite manualmente
 - `appendRow_()` aggiornato per creare automaticamente foglio anno se mancante
 - Elementi DOM cercati con `getElementById` prima che la tab fosse visibile → aggiunto `if (el)` guard ovunque
+- `bulkImportSpese_` / `bulkImportInvestimenti_` usano `getOrOpenImportSheet_` (ricerca per nome su Drive) invece di `appendRow_` per evitare sovrascrittura del puntatore `ID_SPESE`/`ID_INVESTIMENTI` — ripristinano la property all'anno corrente dopo l'import
 - Il file HTML è un single-file app, tutto inline (no moduli, no bundler)
