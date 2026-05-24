@@ -735,8 +735,9 @@ function renderContiList() {
   el.innerHTML = CONTI.map(c => {
     const isInv = c.tipo === 'Investimento';
     const saldoColor = !isInv && c.saldo > 0 ? 'var(--green)' : !isInv && c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
+    const invVal = isInv ? (lastInvByPiatt[c.piattaforma]?.valore ?? null) : null;
     const right = isInv
-      ? `<span class="badge badge-blue">inv</span>`
+      ? `<span style="font-family:var(--mono);font-size:14px;color:var(--blue)">${invVal != null ? '€'+fmtDec(invVal) : '—'}</span>`
       : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmtDec(c.saldo) : '—'}</span>`;
     return `<div class="row">
       <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
@@ -1038,6 +1039,7 @@ async function loadInvestimenti() {
   const byP = {};
   [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
   lastInvByPiatt = byP;
+  renderContiList();
 
   const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
   const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
