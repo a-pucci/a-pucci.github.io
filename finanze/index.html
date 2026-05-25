@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#c9f542" />
+<link rel="manifest" href="/finanze/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanze">
 <title>Finanze</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f0f0f'/><text x='16' y='23' font-size='20' text-anchor='middle' font-family='sans-serif' fill='%23c9f542'>€</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -348,9 +352,29 @@
   .leg-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 4px 0; }
   .leg-label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
   .leg-val { font-family: var(--mono); color: var(--text); }
+
+  /* ── OFFLINE BANNER ── */
+  #offline-banner {
+    display: none;
+    background: var(--red-bg);
+    border-bottom: 1px solid rgba(255,107,107,0.25);
+    padding: 8px 16px;
+    align-items: center;
+    gap: 8px;
+  }
+  body.is-offline #offline-banner { display: flex; }
 </style>
 </head>
 <body>
+
+<div id="offline-banner">
+  <span style="color:var(--red);font-size:0.8rem">●</span>
+  <span style="color:var(--red);font-size:0.82rem;font-weight:500">Sei offline — i dati potrebbero non essere aggiornati</span>
+</div>
+<div id="sync-banner" style="display:none;background:var(--accent-bg);border-bottom:1px solid rgba(201,245,66,0.25);padding:8px 16px;align-items:center;justify-content:space-between;gap:8px">
+  <span style="color:var(--accent);font-size:0.82rem;font-weight:500">✓ Sincronizzazione completata</span>
+  <button onclick="reloadAll();document.getElementById('sync-banner').style.display='none'" style="background:var(--accent-bg);border:1px solid rgba(201,245,66,0.3);color:var(--accent);font-size:0.78rem;padding:4px 12px;border-radius:var(--radius-sm);cursor:pointer">Ricarica</button>
+</div>
 
 <!-- APP -->
 <div id="app">
@@ -686,14 +710,82 @@ const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott
 
 const todayISO = new Date().toISOString().slice(0,10);
 
+// ── INDEXEDDB — coda operazioni offline ───────────────────────
+const _DB_NAME = 'finanze-db';
+const _DB_STORE = 'pending-ops';
+
+function _openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(_DB_STORE, { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _savePendingOp(body) {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(_DB_STORE, 'readwrite');
+    tx.objectStore(_DB_STORE).add({ body, timestamp: Date.now() });
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _getAllPendingOps() {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(_DB_STORE, 'readonly').objectStore(_DB_STORE).getAll();
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _deletePendingOp(id) {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(_DB_STORE, 'readwrite');
+    tx.objectStore(_DB_STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _flushPendingOps() {
+  const ops = await _getAllPendingOps();
+  if (ops.length === 0) return;
+  for (const op of ops) {
+    try {
+      const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
+      const res = await r.json();
+      if (res.ok) await _deletePendingOp(op.id);
+    } catch { /* riprova alla prossima apertura */ }
+  }
+  const remaining = await _getAllPendingOps();
+  if (remaining.length === 0) _showSyncBanner();
+}
+
 // ── API ──────────────────────────────────────────────────────
 async function apiGet(params) {
   const qs = new URLSearchParams(params).toString();
   const r  = await fetch(API_URL + '?' + qs);
   return r.json();
 }
+const _QUEUEABLE = new Set(['addSpesa', 'addEntrata', 'addInvestimento']);
+
 async function apiPost(body) {
-  const r = await fetch(API_URL, { method:'POST', body: JSON.stringify(body) });
+  if (!navigator.onLine && _QUEUEABLE.has(body.action)) {
+    await _savePendingOp(body);
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.sync) await reg.sync.register('sync-ops');
+    }
+    return { ok: true, queued: true };
+  }
+  const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
   return r.json();
 }
 
@@ -729,10 +821,15 @@ async function reloadAll() {
 
 // ── CATEGORIE ────────────────────────────────────────────────
 async function loadCategorie() {
-  const res = await apiGet({action:'getCategorie'});
-  if (!res.ok) throw new Error(res.error);
-  CATS = res.data;
-  buildCatSelects();
+  try {
+    const res = await apiGet({action:'getCategorie'});
+    if (!res.ok) throw new Error(res.error);
+    CATS = res.data;
+    buildCatSelects();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 function buildCatSelects() {
@@ -788,11 +885,16 @@ function toggleNewCat() {
 
 // ── CONTI ────────────────────────────────────────────────────
 async function loadConti() {
-  const res = await apiGet({action:'getConti'});
-  if (!res.ok) throw new Error(res.error);
-  CONTI = res.data;
-  renderContiList();
-  buildCatSelects();
+  try {
+    const res = await apiGet({action:'getConti'});
+    if (!res.ok) throw new Error(res.error);
+    CONTI = res.data;
+    renderContiList();
+    buildCatSelects();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 async function loadSummaryAnno() {
@@ -857,21 +959,25 @@ function renderContiList() {
 
 // ── SPESE ────────────────────────────────────────────────────
 async function loadSpese() {
-  updateMonthLabel();
-  const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
-  if (!res.ok) throw new Error(res.error);
-  currentSpese = res.data;
-  applyFilters();
+  try {
+    updateMonthLabel();
+    const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
+    if (!res.ok) throw new Error(res.error);
+    currentSpese = res.data;
+    applyFilters();
 
-  // Aggiorna summary mobile
-  const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
-  const mobTot = document.getElementById('mobile-tot');
-  const mobCount = document.getElementById('mobile-count');
-  const mobLbl = document.getElementById('mobile-month-label2');
-  if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
-  if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
-  if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
-
+    // Aggiorna summary mobile
+    const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
+    const mobTot = document.getElementById('mobile-tot');
+    const mobCount = document.getElementById('mobile-count');
+    const mobLbl = document.getElementById('mobile-month-label2');
+    if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
+    if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
+    if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 function updateMonthLabel() {
@@ -1201,59 +1307,64 @@ async function saveEditMovimento() {
 
 // ── INVESTIMENTI ─────────────────────────────────────────────
 async function loadInvestimenti() {
-  buildPiattButtons();
-  const res = await apiGet({action:'getInvestimenti', year:currentYear});
-  if (!res.ok) return;
-  const data = res.data;
+  try {
+    buildPiattButtons();
+    const res = await apiGet({action:'getInvestimenti', year:currentYear});
+    if (!res.ok) return;
+    const data = res.data;
 
-  // Ultimo snapshot per piattaforma
-  const byP = {};
-  [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
-  lastInvByPiatt = byP;
-  renderContiList();
+    // Ultimo snapshot per piattaforma
+    const byP = {};
+    [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
+    lastInvByPiatt = byP;
+    renderContiList();
 
-  const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
-  const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
-  const rendEur = totInv - totInv0;
-  const rendPct = totInv0 ? ((rendEur/totInv0)*100).toFixed(1) : 0;
+    const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
+    const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
+    const rendEur = totInv - totInv0;
+    const rendPct = totInv0 ? ((rendEur/totInv0)*100).toFixed(1) : 0;
 
-  const _im = document.getElementById('inv-metrics'); if(_im) _im.innerHTML =
-    Object.entries(byP).map(([p,r]) => `
-      <div class="metric">
-        <div class="label">${p}</div>
-        <div class="value">€${fmt(r.valore)}</div>
-        ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
-      </div>`).join('')
-    + `<div class="metric">
-        <div class="label">Totale</div>
-        <div class="value">€${fmt(totInv)}</div>
-        ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
-       </div>`;
+    const _im = document.getElementById('inv-metrics'); if(_im) _im.innerHTML =
+      Object.entries(byP).map(([p,r]) => `
+        <div class="metric">
+          <div class="label">${p}</div>
+          <div class="value">€${fmt(r.valore)}</div>
+          ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
+        </div>`).join('')
+      + `<div class="metric">
+          <div class="label">Totale</div>
+          <div class="value">€${fmt(totInv)}</div>
+          ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
+         </div>`;
 
-  // Panoramica — chiamata sempre, anche senza snapshot
-  renderPanoramica(totInv);
+    // Panoramica — chiamata sempre, anche senza snapshot
+    renderPanoramica(totInv);
 
-  // Grafico andamento
-  renderInvChart(data);
-  renderPatrimonioChart(data);
+    // Grafico andamento
+    renderInvChart(data);
+    renderPatrimonioChart(data);
 
-  // Lista
-  const el = document.getElementById('inv-list');
-  if (!el) return;
-  if (!data.length) { el.innerHTML='<div class="empty">Nessun snapshot ancora — aggiungine uno sopra</div>'; return; }
-  el.innerHTML = [...data].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,20).map(r => {
-    const rend = r.investito ? r.valore - r.investito : null;
-    return `<div class="row">
-      <div>
-        <div class="name">${r.piattaforma}</div>
-        <div class="sub">${new Date(r.data).toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        ${rend!==null?`<div class="prv" style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
-      </div>
-    </div>`;
-  }).join('');
+    // Lista
+    const el = document.getElementById('inv-list');
+    if (!el) return;
+    if (!data.length) { el.innerHTML='<div class="empty">Nessun snapshot ancora — aggiungine uno sopra</div>'; return; }
+    el.innerHTML = [...data].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,20).map(r => {
+      const rend = r.investito ? r.valore - r.investito : null;
+      return `<div class="row">
+        <div>
+          <div class="name">${r.piattaforma}</div>
+          <div class="sub">${new Date(r.data).toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          ${rend!==null?`<div class="prv" style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 let invChartInst = null;
@@ -1361,11 +1472,15 @@ async function addInvestimento() {
       valore, investito, rendimentoEur, rendimentoPct, data
     });
     if (res.ok) {
-      const vEl = document.getElementById('inv-valore'); if (vEl) vEl.value = '';
-      const iEl = document.getElementById('inv-investito'); if (iEl) iEl.value = '';
-      const dEl = document.getElementById('inv-data'); if (dEl) dEl.value = todayISO;
-      showMsg('inv-ok');
-      await loadInvestimenti();
+      if (res.queued) {
+        showMsg('inv-ok', '⏳ Salvato offline — verrà sincronizzato');
+      } else {
+        const vEl = document.getElementById('inv-valore'); if (vEl) vEl.value = '';
+        const iEl = document.getElementById('inv-investito'); if (iEl) iEl.value = '';
+        const dEl = document.getElementById('inv-data'); if (dEl) dEl.value = todayISO;
+        showMsg('inv-ok');
+        await loadInvestimenti();
+      }
     } else { showMsg('inv-err', res.error||'Errore'); }
   } catch(e) { showMsg('inv-err', e.message); }
 
@@ -1416,17 +1531,30 @@ async function addSpesa() {
       metodo: ''
     });
     if (res.ok) {
-      const aEl = document.getElementById('q-amount'); if (aEl) aEl.value = '';
-      const nEl = document.getElementById('q-note'); if (nEl) nEl.value = '';
-      if (btn) {
-        btn.classList.add('btn-success');
-        btn.innerHTML = '✓ Salvata';
-        setTimeout(() => {
-          btn.classList.remove('btn-success');
-          btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
-        }, 1800);
+      if (res.queued) {
+        if (btn) {
+          btn.style.background = 'var(--amber)';
+          btn.style.color = '#0f0f0f';
+          btn.innerHTML = '⏳ Salvata offline';
+          setTimeout(() => {
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+          }, 3000);
+        }
+      } else {
+        const aEl = document.getElementById('q-amount'); if (aEl) aEl.value = '';
+        const nEl = document.getElementById('q-note'); if (nEl) nEl.value = '';
+        if (btn) {
+          btn.classList.add('btn-success');
+          btn.innerHTML = '✓ Salvata';
+          setTimeout(() => {
+            btn.classList.remove('btn-success');
+            btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+          }, 1800);
+        }
+        await loadSpese();
       }
-      await loadSpese();
     } else { showMsg('spesa-err', res.error || 'Errore'); }
   } catch(err) { showMsg('spesa-err', err.message); }
 
@@ -1471,11 +1599,16 @@ function renderEntrate() {
 }
 
 async function loadEntrate() {
-  updateEntratMonthLabel();
-  const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
-  if (!res.ok) return;
-  currentEntrate = res.data;
-  renderEntrate();
+  try {
+    updateEntratMonthLabel();
+    const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
+    if (!res.ok) return;
+    currentEntrate = res.data;
+    renderEntrate();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 async function addEntrata() {
@@ -1491,10 +1624,14 @@ async function addEntrata() {
   try {
     const res = await apiPost({action:'addEntrata', importo:amt, tipo, conto, nota:note, data, year});
     if (res.ok) {
-      const aEl = document.getElementById('e-amount'); if (aEl) aEl.value = '';
-      const nEl = document.getElementById('e-note'); if (nEl) nEl.value = '';
-      const dEl = document.getElementById('e-date'); if (dEl) dEl.value = todayISO;
-      showMsg('entrata-ok'); await loadEntrate();
+      if (res.queued) {
+        showMsg('entrata-ok', '⏳ Salvata offline — verrà sincronizzata');
+      } else {
+        const aEl = document.getElementById('e-amount'); if (aEl) aEl.value = '';
+        const nEl = document.getElementById('e-note'); if (nEl) nEl.value = '';
+        const dEl = document.getElementById('e-date'); if (dEl) dEl.value = todayISO;
+        showMsg('entrata-ok'); await loadEntrate();
+      }
     } else { showMsg('entrata-err', res.error||'Errore'); }
   } catch(err) { showMsg('entrata-err', err.message); }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Salva entrata'; }
@@ -1938,7 +2075,30 @@ function togglePrivate() {
 }
 
 // Auto-start
+function _updateOfflineClass() {
+  document.body.classList.toggle('is-offline', !navigator.onLine);
+}
+window.addEventListener('online', _updateOfflineClass);
+window.addEventListener('offline', _updateOfflineClass);
+_updateOfflineClass(); // stato iniziale
+
+function _showSyncBanner() {
+  const el = document.getElementById('sync-banner');
+  if (el) el.style.display = 'flex';
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'sync-complete') _showSyncBanner();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  // Fallback per browser senza Background Sync (es. Safari):
+  if (navigator.onLine) {
+    _flushPendingOps().catch(() => {});
+  }
+
   if (localStorage.getItem('privateMode') === '1') {
     document.body.classList.add('private-mode');
     const icon = document.getElementById('privacy-icon');
@@ -2010,5 +2170,12 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="msg err" id="edit-err"></div>
   </div>
 </div>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/finanze/sw.js');
+    });
+  }
+</script>
 </body>
 </html>
