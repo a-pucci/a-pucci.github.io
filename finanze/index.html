@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#c9f542" />
+<link rel="manifest" href="/finanze/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanze">
 <title>Finanze</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f0f0f'/><text x='16' y='23' font-size='20' text-anchor='middle' font-family='sans-serif' fill='%23c9f542'>€</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -2010,5 +2014,12 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="msg err" id="edit-err"></div>
   </div>
 </div>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/finanze/sw.js');
+    });
+  }
+</script>
 </body>
 </html>
