@@ -13,10 +13,11 @@ Sviluppata in una singola sessione con Claude, ora da completare con Claude Code
 | Frontend | HTML + CSS + Vanilla JS (single file) |
 | Backend / Database | Google Apps Script + Google Sheets |
 | Hosting | GitHub Pages (`a-pucci.it/finanze/`) |
-| Protezione accesso | Cloudflare Worker (HTTP Basic Auth) |
+| Protezione accesso | Cloudflare Worker (cookie session auth) |
 | Grafici | Chart.js 4.4.1 + chartjs-adapter-date-fns |
 | Icone | Tabler Icons (webfont CDN) |
 | Font | DM Sans + DM Mono (Google Fonts) |
+| PWA | manifest.json + Service Worker (cache-first + Background Sync) |
 
 ---
 
@@ -24,6 +25,10 @@ Sviluppata in una singola sessione con Claude, ora da completare con Claude Code
 
 - `index.html` — tutta l'app (HTML + CSS + JS in un file solo)
 - `FinanzePersonali_AppsScript.js` — backend Google Apps Script
+- `manifest.json` — Web App Manifest per installabilità PWA
+- `sw.js` — Service Worker (app shell cache-first + Background Sync)
+- `gen_icons.js` — script Node.js per generare icone PWA (192×192, 512×512, maskable)
+- `icons/icon-192.png`, `icons/icon-512.png`, `icons/icon-512-maskable.png` — icone PWA
 
 ---
 
@@ -60,7 +65,7 @@ Finanza/
 
 **URL endpoint:**
 ```
-https://script.google.com/macros/s/AKfycbyDVKON1C98Z5rnIgKVeYRR5w47gQnW8CoorxfXYMwmNedPcG72SCLGpqgfatS7nIo1/exec
+https://script.google.com/macros/s/AKfycbyDLp-_55rEWFptBM93KXkDZ-d1JoQEqSeGfsCE0XicqVrQtmFn9xCLSdgB7inFXps/exec
 ```
 
 ### Azioni GET disponibili
@@ -89,6 +94,7 @@ Body JSON con campo `action`:
 - Gli ID dei file Sheets sono salvati in `PropertiesService.getScriptProperties()`
 - `appendRow_()` crea automaticamente il foglio dell'anno se non esiste
 - Se il setup iniziale fallisce, eseguire `diagnostica()` per verificare le properties
+- `bulkImportSpese_` / `bulkImportInvestimenti_` usano `getOrOpenImportSheet_` (ricerca per nome su Drive) per evitare sovrascrittura dei puntatori ID_SPESE/ID_INVESTIMENTI — ripristinano la property all'anno corrente dopo l'import
 
 ---
 
@@ -96,22 +102,27 @@ Body JSON con campo `action`:
 
 ### Stato globale
 ```javascript
-const API_URL = 'https://script.google.com/macros/s/.../exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyDLp-.../exec';
+const INV_CAT = 'Investimenti'; // categoria spese da separare dalle spese correnti
 let CATS = {};           // categorie da Sheets { NomeCat: { color, icon, subs: [] } }
 let CONTI = [];          // conti da Sheets
-let currentSpese = [];   // spese del mese corrente
+let currentSpese = [];   // spese del mese corrente (include categoria INV_CAT)
+let currentEntrate = []; // entrate del mese corrente
 let currentMonth = ...;  // mese corrente (1-12)
 let currentYear = ...;   // anno corrente
 let budgetData = [];     // dati budget anno corrente
 let budgetMonth = ...;
 let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
+let selectedQConto = ''; // conto selezionato nel form aggiungi spesa (default: Trade Republic)
+let lastInvByPiatt = {}; // ultimo snapshot per piattaforma { piattaforma: { valore, investito, ... } }
 ```
 
 ### Funzioni principali
-- `reloadAll()` — carica categorie, conti, spese, investimenti
+- `reloadAll()` — carica categorie, conti, spese, entrate, investimenti
 - `loadCategorie()` / `loadConti()` / `loadSpese()` / `loadEntrate()` / `loadInvestimenti()`
 - `renderBudgetTab()` — carica e renderizza budget (chiamata anche da loadSpese)
-- `renderPanoramica(totInv)` — aggiorna tab panoramica
+- `renderPanoramica(totInv)` — aggiorna tab panoramica con metriche aggregate
+- `renderEntrate()` — aggiorna metriche tab entrate
 - `renderAccordion()` — vista spese per categoria con accordion sottocategorie
 - `renderSubcatFlat()` — vista spese per sottocategoria
 - `renderTxList()` — lista movimenti
@@ -120,7 +131,10 @@ let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
 - `renderPatrimonioChart(data)` — line chart andamento patrimonio totale (tab Panoramica), punti aggregati per settimana
 - `renderTrendAnnoChart()` — line chart entrate vs spese mensili (tab Panoramica)
 - `renderDonutChart()` — donut allocazione piattaforme (tab Panoramica)
-- `buildPiattButtons()` — bottoni selezione piattaforma nel form snapshot
+- `buildPiattButtons()` — bottoni selezione piattaforma nel form snapshot investimenti (da CONTI tipo Investimento)
+- `selectPiatt(p, btn)` — seleziona piattaforma investimento e aggiorna stile bottoni
+- `buildQContoButtons()` — bottoni selezione conto nel form aggiungi spesa (solo CONTI tipo 'Conto corrente'), preseleziona Trade Republic
+- `selectQConto(nome, btn)` — seleziona conto e aggiorna stile bottoni
 - `addSpesa()` / `addEntrata()` / `addInvestimento()` / `saveBudget()`
 - `addCategoria()` / `addConto()`
 - `openEditMovimento()` / `saveEditMovimento()` — modal modifica spese/entrate
@@ -130,12 +144,46 @@ let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
 - `loadSpeseCsv()` / `importSpeseCsv()` — importer CSV spese (tab Impostazioni)
 - `loadMfCsv()` / `importMfCsv()` — importer CSV Moneyfarm Risparmi (tab Impostazioni)
 
+### Funzioni PWA / Offline
+- `_openDB()` — apre IndexedDB `finanze-db`, store `pending-ops` (keyPath: id, autoIncrement)
+- `_savePendingOp(body)` — salva operazione in coda offline `{ action, body, timestamp }`
+- `_getAllPendingOps()` — legge tutti i record pendenti da IndexedDB
+- `_deletePendingOp(id)` — elimina record da IndexedDB dopo sync riuscita
+- `_flushPendingOps()` — invia tutti i pending ops a Apps Script (fallback Safari senza Background Sync)
+- `_showSyncBanner()` — mostra banner verde "Sincronizzazione completata" con pulsante Ricarica (4 sec)
+- `_updateOfflineClass()` — aggiunge/rimuove `body.is-offline` per mostrare/nascondere `#offline-banner`
+- `apiPost(body)` — se `!navigator.onLine` e action è in `_QUEUEABLE`, salva in IndexedDB e registra sync tag; altrimenti fetch normale. Ritorna `{ ok: true, queued: true }` quando accodato.
+
+**Costanti PWA:**
+```javascript
+const _QUEUEABLE = new Set(['addSpesa', 'addEntrata', 'addInvestimento']);
+// IndexedDB: DB_NAME = 'finanze-db', DB_STORE = 'pending-ops'
+```
+
+### Logica metriche
+
+**Tab Panoramica** — `renderPanoramica(totInv)`:
+- `totSpese` = spese del mese esclusa categoria `INV_CAT`
+- `totUscite` = tutte le spese del mese (inclusi investimenti)
+- `totEntrate` = entrate del mese
+- `risparmio` = `totEntrate - totSpese`
+- Metriche: Patrimonio totale, Investimenti, Piano pensione (se > 0), Saldo conti, Entrate mese, Spese mese, Uscite mese, Risparmio mese
+
+**Tab Entrate** — `renderEntrate()`:
+- `totS` = spese del mese esclusa categoria `INV_CAT`
+- `risparmio` = `totEntrate - totS`
+
+**Tab Investimenti** — `loadInvestimenti()`:
+- Metriche per piattaforma (ultimo snapshot), poi Totale contributi (`totInv0` = sum investito), poi Totale (`totInv` = sum valore attuale)
+
+Tutti i valori monetari usano `fmtDec(n)` (formato it-IT con 2 decimali).
+
 ### Tab presenti (nav)
-1. **Panoramica** — metriche aggregate (patrimonio, investimenti, saldo conti, spese mese, risparmio), donut allocazione piattaforme, grafico andamento patrimonio (settimanale), grafico trend mensile entrate/spese, lista conti
-2. **Spese** — quick add + filtri (testo, categoria, min/max) + accordion/flat/lista + grafico donut; filtri persistenti al cambio mese
-3. **Investimenti** — snapshot rapido per piattaforma + grafico andamento per piattaforma (settimanale)
+1. **Panoramica** — metriche aggregate (patrimonio, investimenti, saldo conti, entrate/spese/uscite/risparmio mese), donut allocazione piattaforme, grafico andamento patrimonio (settimanale), grafico trend mensile entrate/spese, lista conti
+2. **Spese** — quick add (categoria+sottocategoria selects, bottoni conto corrente, nota, data) + filtri (testo, categoria, min/max) + accordion/flat/lista + grafico donut; filtri persistenti al cambio mese
+3. **Investimenti** — snapshot rapido per piattaforma (bottoni) + grafico andamento per piattaforma (settimanale) + metriche con Totale contributi e Totale
 4. **Budget** — budget vs reale per mese + form modifica budget
-5. **Entrate** — form aggiunta entrata + lista movimenti
+5. **Entrate** — form aggiunta entrata + lista movimenti + metriche (entrate, spese senza inv, risparmio)
 6. **Impostazioni** — aggiungi categoria/sottocategoria/conto, URL script, importa Moneyfarm Risparmi da CSV
 
 ### CSS Variables (tema dark)
@@ -157,31 +205,46 @@ let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
 
 ### Helper functions
 ```javascript
-fmt(n)         // formatta numero come stringa italiana (es. 1.234)
+fmt(n)            // formatta numero come stringa italiana senza decimali (es. 1.234)
+fmtDec(n)         // formatta numero it-IT con 2 decimali (es. 1.234,56)
 showMsg(id, txt)  // mostra messaggio ok/err per 4 secondi
-apiGet(params) // fetch GET verso Apps Script
-apiPost(body)  // fetch POST verso Apps Script
+apiGet(params)    // fetch GET verso Apps Script
+apiPost(body)     // fetch POST verso Apps Script (con gestione offline queue)
 ```
+
+---
+
+## Service Worker (`sw.js`)
+
+- `CACHE_VERSION` — costante da incrementare ad ogni deploy che modifica file in cache (attuale: `v3`)
+- `SHELL_CACHE = finanze-shell-{CACHE_VERSION}` — cache app shell (cache-first)
+- `FONTS_CACHE = finanze-fonts-{CACHE_VERSION}` — cache font Google (runtime cache)
+- **install**: pre-caccia app shell (index.html, Chart.js, adapter, font CSS, Tabler Icons) + `skipWaiting()`
+- **activate**: elimina cache versioni precedenti + `clients.claim()`
+- **fetch**: cache-first per URL in APP_SHELL e `fonts.gstatic.com`; pass-through per tutto il resto
+- **sync** (`sync-ops`): legge IndexedDB, POSTs a Apps Script, elimina successi, notifica clients con `postMessage({ type: 'sync-complete' })` solo se tutto OK
 
 ---
 
 ## Infrastruttura hosting
 
 ### GitHub Pages
-- Repo: `a-pucci.github.io` (o repo del sito a-pucci.it)
+- Repo: `a-pucci.github.io`
 - File: `finanze/index.html`
 - URL: `a-pucci.it/finanze/`
 
 ### Cloudflare
 - Dominio `a-pucci.it` gestito da Cloudflare (nameserver: lars + tess)
-- Worker `finanze-auth`: HTTP Basic Auth su route `a-pucci.it/finanze*`
-- Username: `ale`
-- Password: definita nel Worker (non nel codice frontend)
+- Worker `finanze-auth`: cookie session auth su route `a-pucci.it/finanze*`
+  - Cookie name: `finanze_session`, durata 30 giorni
+  - **Bypass auth** (nessun cookie richiesto) per: `/finanze/sw.js`, `/finanze/manifest.json`, `/finanze/icons/*`
+- Username: `Modlion`
+- Password: definita nel Worker
 
 ### Sicurezza
-- Il PIN era stato considerato ma rimosso — falsa sicurezza lato client
-- La protezione reale è il Cloudflare Worker (server-side)
+- La protezione reale è il Cloudflare Worker (server-side, cookie)
 - L'URL Apps Script è pubblico ma non indicizzato
+- I file PWA (sw.js, manifest, icons) sono pubblici per design — necessario per l'installabilità
 
 ---
 
@@ -189,9 +252,10 @@ apiPost(body)  // fetch POST verso Apps Script
 - **Trade Republic** — ETF (MSCI World, S&P 500), bond, azioni singole (snapshot manuali)
 - **Moneyfarm** — portafoglio Risparmi (PAC mensile €500) + portafoglio Pensione (manuale)
 
-## Conti correnti dell'utente
+## Conti correnti dell'utente (tipo 'Conto corrente' in Conti.xlsx)
 - Intesa Sanpaolo
 - N26
+- Trade Republic (conto corrente con carta di debito)
 
 ## File accessori (non nel repo)
 - `finanze/spese_import.csv` — 2249 righe generate da `Money Manager backup.xlsx` (2023-02-01 → 2026-05-24), pronte per l'import bulk tramite `bulkImportSpese`
@@ -207,5 +271,6 @@ Auto (Carburante/Parcheggio/Manutenzione/Assicurazione/Bollo/Pedaggio), Casa (Bo
 - Varie funzioni JS andate perse durante refactoring iterativo — reinserite manualmente
 - `appendRow_()` aggiornato per creare automaticamente foglio anno se mancante
 - Elementi DOM cercati con `getElementById` prima che la tab fosse visibile → aggiunto `if (el)` guard ovunque
-- `bulkImportSpese_` / `bulkImportInvestimenti_` usano `getOrOpenImportSheet_` (ricerca per nome su Drive) invece di `appendRow_` per evitare sovrascrittura del puntatore `ID_SPESE`/`ID_INVESTIMENTI` — ripristinano la property all'anno corrente dopo l'import
 - Il file HTML è un single-file app, tutto inline (no moduli, no bundler)
+- PWA: il reset del bottone "Salva spesa" controllava solo `btn-success`; aggiunta classe `btn-queued` per proteggere lo stato amber "⏳ Salvata offline" fino allo scadere del timeout
+- PWA: al deploy che modifica file in cache occorre incrementare `CACHE_VERSION` in `sw.js`
