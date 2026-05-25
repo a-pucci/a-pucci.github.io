@@ -136,6 +136,8 @@
   }
   .metric .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing:.03em; }
   .metric .value { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
+  .metric--accent { border-color: var(--border2); }
+  .metric--accent .value { color: var(--accent); }
   .metric .delta { font-size: 11px; margin-top: 4px; font-family: var(--mono); }
   .up { color: var(--green); } .dn { color: var(--red); }
 
@@ -657,6 +659,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyDLp-_55rEWFptBM93KXkD
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
 let CONTI = [];
+const INV_CAT = 'Investimenti'; // categoria spese da separare dalle spese correnti
 let summaryAnno   = null;
 let trendAnnoInst = null;
 let currentSpese = [];
@@ -853,7 +856,7 @@ async function loadSpese() {
   const mobCount = document.getElementById('mobile-count');
   const mobLbl = document.getElementById('mobile-month-label2');
   if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
-  if (mobCount) mobCount.textContent = currentSpese.length;
+  if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
   if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
 
 }
@@ -870,13 +873,18 @@ function renderSpeseMetrics() {
   const spese = getFilteredSpese();
   const hasFilter = activeFilters.q || activeFilters.cat ||
                     activeFilters.minAmt !== null || activeFilters.maxAmt !== null;
-  const tot = spese.reduce((s,r)=>s+r.importo,0);
-  const avg = spese.length ? tot/spese.length : 0;
-  const label = hasFilter ? 'Spese filtrate' : 'Spese totali';
+  const invSpese = spese.filter(e => e.categoria === INV_CAT);
+  const regSpese = spese.filter(e => e.categoria !== INV_CAT);
+  const totInv = invSpese.reduce((s,r) => s+r.importo, 0);
+  const totReg = regSpese.reduce((s,r) => s+r.importo, 0);
+  const totUscite = totReg + totInv;
+  const avg = regSpese.length ? totReg/regSpese.length : 0;
+  const suffix = hasFilter ? ' filtrate' : '';
   const _sm = document.getElementById('spese-metrics'); if(_sm) _sm.innerHTML = `
-    <div class="metric"><div class="label">${label}</div><div class="value">€${fmtDec(tot)}</div></div>
-    <div class="metric"><div class="label">Transazioni</div><div class="value">${spese.length}</div></div>
-    <div class="metric"><div class="label">Media</div><div class="value">${spese.length?'€'+fmtDec(avg):'—'}</div></div>`;
+    <div class="metric metric--accent"><div class="label">Uscite${suffix}</div><div class="value">€${fmtDec(totUscite)}</div></div>
+    <div class="metric"><div class="label">Spese${suffix}</div><div class="value">€${fmtDec(totReg)}</div></div>
+    <div class="metric"><div class="label">Investimenti${suffix}</div><div class="value">${totInv?'€'+fmtDec(totInv):'—'}</div></div>
+    <div class="metric"><div class="label">Media spesa</div><div class="value">${regSpese.length?'€'+fmtDec(avg):'—'}</div></div>`;
 }
 
 function getFilteredSpese() {

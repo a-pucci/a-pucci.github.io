@@ -31,19 +31,12 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## PRIORITÀ ALTA
 
-### TASK — Tab Spese: separare Investimenti da Spese, aggiungere riquadro Uscite
-Attualmente la tab Spese mostra solo le spese mensili. Gli investimenti (snapshot) sono in una tab
-separata ma non vengono sommati alle uscite del mese.
-
-**Cosa fare:**
-- Aggiungere una metrica "Uscite" = totale spese mese + totale investimenti mese
-- Le spese rimangono visibili come voce separata; gli investimenti del mese compaiono come seconda voce
-- Valutare se serve una nuova chiamata API per avere il totale investimenti del mese corrente,
-  o se è ricavabile dai dati già in memoria (`currentInvestimenti` o simile)
-- Il riquadro "Uscite" va evidenziato come totale principale (font più grande o colore accent)
-
-**Nota:** verificare come sono strutturati i dati investimenti per capire se si tratta di snapshot
-(valore totale piattaforma) o di singoli versamenti periodici.
+### ~~TASK — Tab Spese: separare Investimenti da Spese, aggiungere riquadro Uscite~~ ✅ COMPLETATO
+**Fix applicati:**
+- Costante `INV_CAT = 'Investimenti'` — filtra le spese della categoria investimenti
+- `renderSpeseMetrics()` riscritta: 4 metriche — **Uscite** (accent giallo, tot reg+inv), **Spese** (solo regolari), **Investimenti** (solo categoria), **Media spesa** (media su sole spese regolari)
+- Mobile `#mobile-count` aggiornato: conta solo le spese regolari (esclusi investimenti)
+- Nessuna chiamata API aggiuntiva: tutto calcolato su `currentSpese` già in memoria
 
 ---
 
