@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
 

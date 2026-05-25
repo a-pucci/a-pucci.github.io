@@ -454,9 +454,7 @@
         <select id="q-cat" onchange="updateSubcats()"><option value="">Categoria...</option></select>
         <select id="q-subcat"><option value="">Sottocategoria...</option></select>
       </div>
-      <div class="selects-row">
-        <select id="q-conto"><option value="">Conto (opzionale)...</option></select>
-      </div>
+      <div id="q-conto-wrap" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
       <input type="text" id="q-note" placeholder="Nota (opzionale)" style="margin-bottom:8px" />
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
@@ -916,12 +914,7 @@ function renderContiList() {
     contoSel.innerHTML = '<option value="">Conto...</option>';
     CONTI.forEach(c => contoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
   }
-  const qContoSel = document.getElementById('q-conto');
-  if (qContoSel) {
-    qContoSel.innerHTML = '<option value="">Conto (opzionale)...</option>';
-    CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
-         .forEach(c => qContoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
-  }
+  buildQContoButtons();
   if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
 
   const correnti  = CONTI.filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione' && c.tipo !== 'Piano pensione');
@@ -1328,12 +1321,16 @@ async function loadInvestimenti() {
       Object.entries(byP).map(([p,r]) => `
         <div class="metric">
           <div class="label">${p}</div>
-          <div class="value">€${fmt(r.valore)}</div>
-          ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
+          <div class="value">€${fmtDec(r.valore)}</div>
+          ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmtDec(Math.abs(r.valore-r.investito))}</div>` : ''}
         </div>`).join('')
       + `<div class="metric">
+          <div class="label">Totale contributi</div>
+          <div class="value">€${fmtDec(totInv0)}</div>
+         </div>
+         <div class="metric metric--accent">
           <div class="label">Totale</div>
-          <div class="value">€${fmt(totInv)}</div>
+          <div class="value">€${fmtDec(totInv)}</div>
           ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
          </div>`;
 
@@ -1372,6 +1369,34 @@ let donutInst    = null;
 let patrimonioInst = null;
 let lastInvByPiatt = {};
 let selectedPiatt = '';
+let selectedQConto = '';
+
+function buildQContoButtons() {
+  const wrap = document.getElementById('q-conto-wrap');
+  if (!wrap) return;
+  if (!CONTI.length) { wrap.innerHTML = ''; return; }
+  const prev = selectedQConto;
+  wrap.innerHTML = CONTI.map(c => `
+    <button onclick="selectQConto('${c.nome}', this)"
+      style="padding:6px 14px;border-radius:var(--radius-sm);border:1px solid var(--border2);
+             background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s">
+      ${c.nome}
+    </button>`).join('');
+  const toSelect = prev || 'Trade Republic';
+  const btns = wrap.querySelectorAll('button');
+  let found = null;
+  btns.forEach(b => { if (b.textContent.trim() === toSelect) found = b; });
+  if (found) selectQConto(toSelect, found);
+  else if (btns.length) selectQConto(CONTI[0].nome, btns[0]);
+}
+
+function selectQConto(nome, btn) {
+  selectedQConto = nome;
+  document.querySelectorAll('#q-conto-wrap button').forEach(b => {
+    b.style.background = 'transparent'; b.style.color = 'var(--muted)'; b.style.borderColor = 'var(--border)';
+  });
+  btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--text)'; btn.style.borderColor = 'var(--border2)';
+}
 
 function buildPiattButtons() {
   const wrap = document.getElementById('piatt-buttons');
@@ -1513,7 +1538,7 @@ async function addSpesa() {
   const nota  = elNota.value;
   const data  = elData.value || todayISO;
   const year  = data.slice(0,4);
-  const conto = document.getElementById('q-conto')?.value || '';
+  const conto = selectedQConto || '';
 
   if (!amt || !cat) { showMsg('spesa-err','Inserisci importo e categoria'); return; }
 
@@ -1583,13 +1608,13 @@ function changeMonthEntrate(d) {
 function renderEntrate() {
   const entrate = currentEntrate;
   const totE = entrate.reduce((s,r)=>s+r.importo, 0);
-  const totS = currentSpese.reduce((s,r)=>s+r.importo, 0);
+  const totS = currentSpese.filter(e => e.categoria !== INV_CAT).reduce((s,r)=>s+r.importo, 0);
   const risp = totE - totS;
   const metricsEl = document.getElementById('entrate-metrics');
   if (metricsEl) metricsEl.innerHTML = `
-    <div class="metric"><div class="label">Entrate ${MONTHS_SHORT[currentEntrateMonth-1]}</div><div class="value">€${fmt(totE)}</div></div>
-    <div class="metric"><div class="label">Spese</div><div class="value">€${fmt(totS)}</div></div>
-    <div class="metric"><div class="label">Risparmio</div><div class="value" style="color:${risp>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(risp))}</div><div class="delta ${risp>=0?'up':'dn'}">${risp>=0?'avanzo':'deficit'}</div></div>`;
+    <div class="metric"><div class="label">Entrate ${MONTHS_SHORT[currentEntrateMonth-1]}</div><div class="value">€${fmtDec(totE)}</div></div>
+    <div class="metric"><div class="label">Spese</div><div class="value">€${fmtDec(totS)}</div></div>
+    <div class="metric"><div class="label">Risparmio</div><div class="value" style="color:${risp>=0?'var(--green)':'var(--red)'}">€${fmtDec(Math.abs(risp))}</div><div class="delta ${risp>=0?'up':'dn'}">${risp>=0?'avanzo':'deficit'}</div></div>`;
   const el = document.getElementById('entrate-list');
   if (!el) return;
   if (!entrate.length) { el.innerHTML='<div class="empty">Nessuna entrata questo mese</div>'; return; }
@@ -1640,7 +1665,8 @@ async function addEntrata() {
 }
 
 function renderPanoramica(totInv) {
-  const totSpese   = currentSpese.reduce((s,r) => s + r.importo, 0);
+  const totSpese   = currentSpese.filter(e => e.categoria !== INV_CAT).reduce((s,r) => s + r.importo, 0);
+  const totUscite  = currentSpese.reduce((s,r) => s + r.importo, 0);
   const totEntrate = currentEntrate.reduce((s,r) => s + r.importo, 0);
   const risparmio  = totEntrate - totSpese;
   const totConti   = CONTI
@@ -1673,12 +1699,20 @@ function renderPanoramica(totInv) {
       <div class="value">€${fmtDec(totConti)}</div>
     </div>
     <div class="metric">
+      <div class="label">Entrate ${MONTHS_SHORT[currentMonth-1]}</div>
+      <div class="value" style="color:var(--green)">€${fmtDec(totEntrate)}</div>
+    </div>
+    <div class="metric">
       <div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div>
-      <div class="value" style="color:var(--red)">€${fmt(totSpese)}</div>
+      <div class="value" style="color:var(--red)">€${fmtDec(totSpese)}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Uscite ${MONTHS_SHORT[currentMonth-1]}</div>
+      <div class="value" style="color:var(--red)">€${fmtDec(totUscite)}</div>
     </div>
     <div class="metric">
       <div class="label">Risparmio ${MONTHS_SHORT[currentMonth-1]}</div>
-      <div class="value" style="color:${risparmio>=0?'var(--green)':'var(--red)'}">€${fmt(Math.abs(risparmio))}</div>
+      <div class="value" style="color:${risparmio>=0?'var(--green)':'var(--red)'}">€${fmtDec(Math.abs(risparmio))}</div>
       <div class="delta ${risparmio>=0?'up':'dn'}">${risparmio>=0?'avanzo':'deficit'}</div>
     </div>`;
 
