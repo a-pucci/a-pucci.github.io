@@ -690,6 +690,64 @@ const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott
 
 const todayISO = new Date().toISOString().slice(0,10);
 
+// ── INDEXEDDB — coda operazioni offline ───────────────────────
+const _DB_NAME = 'finanze-db';
+const _DB_STORE = 'pending-ops';
+
+function _openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(_DB_STORE, { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _savePendingOp(body) {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(_DB_STORE, 'readwrite');
+    tx.objectStore(_DB_STORE).add({ body, timestamp: Date.now() });
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _getAllPendingOps() {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(_DB_STORE, 'readonly').objectStore(_DB_STORE).getAll();
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _deletePendingOp(id) {
+  const db = await _openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(_DB_STORE, 'readwrite');
+    tx.objectStore(_DB_STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+async function _flushPendingOps() {
+  const ops = await _getAllPendingOps();
+  if (ops.length === 0) return;
+  for (const op of ops) {
+    try {
+      const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
+      const res = await r.json();
+      if (res.ok) await _deletePendingOp(op.id);
+    } catch { /* riprova alla prossima apertura */ }
+  }
+  const remaining = await _getAllPendingOps();
+  if (remaining.length === 0) _showSyncBanner();
+}
+
 // ── API ──────────────────────────────────────────────────────
 async function apiGet(params) {
   const qs = new URLSearchParams(params).toString();
