@@ -1536,10 +1536,12 @@ async function addSpesa() {
           btn.style.background = 'var(--amber)';
           btn.style.color = '#0f0f0f';
           btn.innerHTML = '⏳ Salvata offline';
+          btn.classList.add('btn-queued');
           setTimeout(() => {
             btn.style.background = '';
             btn.style.color = '';
             btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+            btn.classList.remove('btn-queued');
           }, 3000);
         }
       } else {
@@ -1558,7 +1560,7 @@ async function addSpesa() {
     } else { showMsg('spesa-err', res.error || 'Errore'); }
   } catch(err) { showMsg('spesa-err', err.message); }
 
-  if (btn) { btn.disabled = false; if (!btn.classList.contains('btn-success')) btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa'; }
+  if (btn) { btn.disabled = false; if (!btn.classList.contains('btn-success') && !btn.classList.contains('btn-queued')) btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa'; }
 }
 
 // ── UI HELPERS ───────────────────────────────────────────────
