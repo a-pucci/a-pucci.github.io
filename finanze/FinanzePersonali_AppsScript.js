@@ -379,8 +379,10 @@ function doPost(e) {
       case 'updateBudget':    result = updateBudget_(body);    break;
       case 'addCategoria':    result = addCategoria_(body);    break;
       case 'addConto':        result = addConto_(body);        break;
-      case 'deleteRow':       result = deleteRow_(body);       break;
-      case 'updateRow':       result = updateRow_(body);       break;
+      case 'deleteRow':            result = deleteRow_(body);            break;
+      case 'updateRow':            result = updateRow_(body);            break;
+      case 'bulkImportSpese':      result = bulkImportSpese_(body);      break;
+      case 'bulkImportInvestimenti': result = bulkImportInvestimenti_(body); break;
       default:
         result = { error: 'Azione non riconosciuta: ' + action };
     }
@@ -872,6 +874,129 @@ function appendRow_(sheetName, row) {
   }
 
   sheet.appendRow(row);
+}
+
+// ── Bulk import ──────────────────────────────────────────────
+
+/**
+ * Apre o crea il foglio per lo sheetName indicato (es. "Spese_2024")
+ * cercando per nome su Drive invece di usare le properties, per non
+ * sovrascrivere il puntatore all'anno corrente.
+ * Se il foglio è vuoto aggiunge l'header, altrimenti appende soltanto.
+ * @param {Folder} root - Cartella radice "Finanza" su Drive
+ * @param {string} sheetName - Nome file e tab (es. "Spese_2024")
+ * @param {string[]} columns - Array di colonne per l'header
+ * @returns {Sheet}
+ */
+function getOrOpenImportSheet_(root, sheetName, columns) {
+  const year = sheetName.split('_')[1];
+  const yearFolder = getOrCreateFolder_(root, year);
+  const ss = getOrCreateSpreadsheet_(yearFolder, sheetName);
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.getSheets()[0];
+    sheet.setName(sheetName);
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, columns.length).setValues([columns]);
+    formatHeader_(sheet, columns.length);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * Importa in bulk un array di spese raggruppandole per anno.
+ * Non sovrascrive i dati esistenti — appende sempre in coda.
+ * Ripristina ID_SPESE all'anno corrente dopo l'import.
+ * @param {{ rows: Array<{data,importo,categoria,sottocategoria,nota}> }} body
+ * @returns {{ ok: boolean, imported: number }}
+ */
+function bulkImportSpese_(body) {
+  const rows = body.rows || [];
+  if (!rows.length) return { ok: true, imported: 0 };
+
+  const byYear = {};
+  rows.forEach(r => {
+    const year = String((r.data || '').slice(0, 4));
+    if (!/^\d{4}$/.test(year)) return;
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push([
+      generateId_(),
+      r.data || '',
+      parseFloat(r.importo) || 0,
+      r.categoria || '',
+      r.sottocategoria || '',
+      r.nota || '',
+      '',
+      '',
+    ]);
+  });
+
+  const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
+  if (!rootIter.hasNext()) throw new Error('Cartella Finanza non trovata');
+  const root = rootIter.next();
+  let total = 0;
+
+  for (const year of Object.keys(byYear).sort()) {
+    const sheet = getOrOpenImportSheet_(root, 'Spese_' + year, COLUMNS.Spese);
+    const yearRows = byYear[year];
+    sheet.getRange(sheet.getLastRow() + 1, 1, yearRows.length, yearRows[0].length).setValues(yearRows);
+    total += yearRows.length;
+  }
+
+  // Ripristina ID_SPESE all'anno corrente
+  const props = PropertiesService.getScriptProperties();
+  const curFolder = getOrCreateFolder_(root, String(CONFIG.YEAR));
+  const curSS = getOrCreateSpreadsheet_(curFolder, 'Spese_' + CONFIG.YEAR);
+  props.setProperty('ID_SPESE', curSS.getId());
+
+  return { ok: true, imported: total };
+}
+
+/**
+ * Importa in bulk snapshot investimento (es. da CSV Moneyfarm) per anno.
+ * Calcola rendimentoEur e rendimentoPct se non forniti.
+ * @param {{ rows: Array<{data,valore,investito,rendimentoEur?,rendimentoPct?}>, piattaforma: string, conto: string, strumento?: string }} body
+ * @returns {{ ok: boolean, imported: number }}
+ */
+function bulkImportInvestimenti_(body) {
+  const rows = body.rows || [];
+  const piattaforma = body.piattaforma || 'Moneyfarm';
+  const conto       = body.conto       || '';
+  const strumento   = body.strumento   || '';
+  if (!rows.length) return { ok: true, imported: 0 };
+
+  const byYear = {};
+  rows.forEach(r => {
+    const year = String((r.data || '').slice(0, 4));
+    if (!/^\d{4}$/.test(year)) return;
+    if (!byYear[year]) byYear[year] = [];
+    const valore    = parseFloat(r.valore)    || 0;
+    const investito = parseFloat(r.investito) || 0;
+    const rendEur   = r.rendimentoEur != null ? parseFloat(r.rendimentoEur) : parseFloat((valore - investito).toFixed(2));
+    const rendPct   = r.rendimentoPct != null ? parseFloat(r.rendimentoPct) : (investito > 0 ? parseFloat(((valore - investito) / investito * 100).toFixed(2)) : 0);
+    byYear[year].push([r.data || '', piattaforma, conto, strumento, valore, investito, rendEur, rendPct]);
+  });
+
+  const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
+  if (!rootIter.hasNext()) throw new Error('Cartella Finanza non trovata');
+  const root = rootIter.next();
+  let total = 0;
+
+  for (const year of Object.keys(byYear).sort()) {
+    const sheet = getOrOpenImportSheet_(root, 'Investimenti_' + year, COLUMNS.Investimenti);
+    const yearRows = byYear[year];
+    sheet.getRange(sheet.getLastRow() + 1, 1, yearRows.length, yearRows[0].length).setValues(yearRows);
+    total += yearRows.length;
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const curFolder = getOrCreateFolder_(root, String(CONFIG.YEAR));
+  const curSS = getOrCreateSpreadsheet_(curFolder, 'Investimenti_' + CONFIG.YEAR);
+  props.setProperty('ID_INVESTIMENTI', curSS.getId());
+
+  return { ok: true, imported: total };
 }
 
 // ── Response helper ──────────────────────────────────────────

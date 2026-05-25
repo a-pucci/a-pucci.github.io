@@ -51,6 +51,44 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ---
 
+## PRIORITÀ MEDIA
+
+### TASK — Convertire l'app in PWA (Progressive Web App)
+
+**Obiettivo:** rendere l'app installabile su home screen e funzionante offline (almeno con dati in cache).
+
+**Cosa fare:**
+
+1. **`manifest.json`** — aggiungere file manifest e linkarlo in `index.html`:
+   - `name`, `short_name`, `theme_color` (`#0f0f0f`), `background_color`
+   - `display: standalone`
+   - Icone 192×192 e 512×512 (generabili da `gen_icons.js` già presente)
+   - `start_url: /finanze/`
+
+2. **Service Worker (`sw.js`)** — registrarlo da `index.html` e implementare:
+   - Cache-first per asset statici (HTML, font CDN, Chart.js CDN)
+   - Network-first per le API call verso Apps Script (con fallback a cache se offline)
+   - Strategia cache: versioning del SW per invalidare la cache al deploy
+
+3. **Registrazione SW** — aggiungere snippet in `index.html`:
+   ```js
+   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/finanze/sw.js');
+   ```
+
+4. **Offline UX** — mostrare un banner/messaggio quando l'app è offline e serve dati dalla cache
+
+**File da creare/modificare:**
+- `finanze/manifest.json` (nuovo)
+- `finanze/sw.js` (nuovo)
+- `finanze/index.html` (aggiungere `<link rel="manifest">` e script registrazione SW)
+
+**Note:**
+- Il Cloudflare Worker (Basic Auth) deve lasciare passare le richieste a `sw.js` e `manifest.json` — verificare che non blocchi questi file
+- GitHub Pages serve da root del repo: i path devono essere relativi a `/finanze/`
+- Le icone sono già generabili con `gen_icons.js`
+
+---
+
 ## VALUTAZIONI / ANALISI
 
 ### TASK — Valutazione scalabilità Google Sheets
