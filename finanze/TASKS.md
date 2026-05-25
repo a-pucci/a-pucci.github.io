@@ -40,16 +40,14 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ---
 
-### TASK — Tab Spese: grafico Distribuzione full-width con percentuali, rimuovere Trend mensile
-Il grafico "Distribuzione" (donut `#spesaChart`) è attualmente affiancato al grafico "Trend mensile"
-(`#trendChart`) in un layout `two-col`. Il trend mensile è ridondante con il grafico in Panoramica.
-
-**Cosa fare:**
-- Rimuovere la card "Trend mensile" (`#trendChart` e la relativa logica `renderTrendChart`)
-- Portare la card "Distribuzione" a full width (rimuovere il wrapper `two-col`)
-- Aggiungere a destra del donut una legenda con le percentuali per ogni categoria:
-  nome categoria, colore dot, percentuale e importo — ordinata per importo decrescente
-- Layout legenda: lista verticale affiancata al donut su desktop, sotto su mobile
+### ~~TASK — Tab Spese: grafico Distribuzione full-width con percentuali, rimuovere Trend mensile~~ ✅ COMPLETATO
+**Fix applicati:**
+- Rimossa card "Trend mensile" (`#trendChart` non aveva nemmeno una funzione di render)
+- Card "Distribuzione spese" portata a full-width (rimosso `two-col` e `mobile-hide`)
+- Layout `.distribuzione-wrap`: flex row — donut 180×180px fisso a sinistra, legenda a destra
+- `renderSpesaChart()` aggiornata: popola `#spesa-legend` con righe categoria (dot, nome, %, importo), ordinato per importo desc
+- Importi legenda con classe `prv` per private mode
+- Mobile: flex column, donut centrato 160×160px, legenda sotto
 
 ---
 

@@ -167,6 +167,18 @@
   .row .del-btn:hover  { opacity: 1; color: var(--red); }
   .row .edit-btn { background: none; border: none; cursor: pointer; color: var(--hint); font-size: 15px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; transition: opacity .15s, color .15s; }
   .row .edit-btn:hover { opacity: 1; color: var(--accent); }
+  /* ── DISTRIBUZIONE ── */
+  .distribuzione-wrap { display: flex; gap: 1.5rem; align-items: center; }
+  .distribuzione-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .leg-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .leg-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .leg-pct  { font-family: var(--mono); font-size: 12px; color: var(--muted); min-width: 32px; text-align: right; }
+  .leg-amt  { font-family: var(--mono); font-size: 12px; color: var(--text); min-width: 80px; text-align: right; }
+  @media(max-width:540px) {
+    .distribuzione-wrap { flex-direction: column; align-items: stretch; }
+    .distribuzione-wrap > div:first-child { width: 160px !important; height: 160px !important; align-self: center; }
+  }
+
   /* ── PRIVATE MODE ── */
   body.private-mode .metric .value,
   body.private-mode .metric .delta,
@@ -471,12 +483,13 @@
       <div id="tx-list"><div class="empty">Caricamento...</div></div>
     </div>
 
-    <div class="two-col mobile-hide">
-      <div class="card"><div class="card-title">Distribuzione</div>
-        <div style="position:relative;height:190px"><canvas id="spesaChart" role="img" aria-label="Distribuzione spese">Caricamento</canvas></div>
-      </div>
-      <div class="card"><div class="card-title">Trend mensile</div>
-        <div style="position:relative;height:190px"><canvas id="trendChart" role="img" aria-label="Trend mensile">Caricamento</canvas></div>
+    <div class="card">
+      <div class="card-title">Distribuzione spese</div>
+      <div class="distribuzione-wrap">
+        <div style="position:relative;width:180px;height:180px;flex-shrink:0">
+          <canvas id="spesaChart" role="img" aria-label="Distribuzione spese">Caricamento</canvas>
+        </div>
+        <div id="spesa-legend" class="distribuzione-legend"></div>
       </div>
     </div>
   </div>
@@ -1720,8 +1733,10 @@ let spesaInst = null;
 
 function renderSpesaChart() {
   const totals = buildCatTotals();
-  const labels = Object.keys(totals);
-  const vals   = labels.map(cat => totals[cat].total);
+  const sorted = Object.entries(totals).sort((a,b) => b[1].total - a[1].total);
+  const grand  = sorted.reduce((s,[,v]) => s+v.total, 0);
+  const labels = sorted.map(([k]) => k);
+  const vals   = sorted.map(([,v]) => v.total);
   const colors = labels.map(cat => CATS[cat]?.color || '#888680');
   const ctx    = document.getElementById('spesaChart');
   if (!ctx) return;
@@ -1731,6 +1746,19 @@ function renderSpesaChart() {
     data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 0 }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '55%', plugins: { legend: { display: false } } }
   });
+  const legend = document.getElementById('spesa-legend');
+  if (!legend) return;
+  legend.innerHTML = sorted.map(([cat, data]) => {
+    const color = CATS[cat]?.color || '#888680';
+    const icon  = CATS[cat]?.icon  || '';
+    const pct   = grand ? Math.round(data.total / grand * 100) : 0;
+    return `<div class="leg-row">
+      <span class="cat-dot" style="background:${color};flex-shrink:0"></span>
+      <span class="leg-name">${icon ? icon+' ' : ''}${cat}</span>
+      <span class="leg-pct">${pct}%</span>
+      <span class="leg-amt prv">€${fmtDec(data.total)}</span>
+    </div>`;
+  }).join('');
 }
 
 
