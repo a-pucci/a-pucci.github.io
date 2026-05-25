@@ -754,8 +754,18 @@ async function apiGet(params) {
   const r  = await fetch(API_URL + '?' + qs);
   return r.json();
 }
+const _QUEUEABLE = new Set(['addSpesa', 'addEntrata', 'addInvestimento']);
+
 async function apiPost(body) {
-  const r = await fetch(API_URL, { method:'POST', body: JSON.stringify(body) });
+  if (!navigator.onLine && _QUEUEABLE.has(body.action)) {
+    await _savePendingOp(body);
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.sync) await reg.sync.register('sync-ops');
+    }
+    return { ok: true, queued: true };
+  }
+  const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
   return r.json();
 }
 
