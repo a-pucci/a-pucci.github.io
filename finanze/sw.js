@@ -2,7 +2,7 @@ const CACHE_VERSION = 'v1';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbyDVKON1C98Z5rnIgKVeYRR5w47gQnW8CoorxfXYMwmNedPcG72SCLGpqgfatS7nIo1/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyDLp-_55rEWFptBM93KXkDZ-d1JoQEqSeGfsCE0XicqVrQtmFn9xCLSdgB7inFXps/exec';
 
 const APP_SHELL = [
   '/finanze/',
@@ -87,10 +87,10 @@ async function syncPendingOps() {
     }
   }
 
+  if (hasError) throw new Error('Some ops failed — Background Sync will retry');
+
   const clients = await self.clients.matchAll({ includeUncontrolled: true });
   clients.forEach(c => c.postMessage({ type: 'sync-complete' }));
-
-  if (hasError) throw new Error('Some ops failed — Background Sync will retry');
 }
 
 // ── INDEXEDDB HELPERS (lato SW) ───────────────────────────────
