@@ -352,9 +352,25 @@
   .leg-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 4px 0; }
   .leg-label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
   .leg-val { font-family: var(--mono); color: var(--text); }
+
+  /* ── OFFLINE BANNER ── */
+  #offline-banner {
+    display: none;
+    background: var(--red-bg);
+    border-bottom: 1px solid rgba(255,107,107,0.25);
+    padding: 8px 16px;
+    align-items: center;
+    gap: 8px;
+  }
+  body.is-offline #offline-banner { display: flex; }
 </style>
 </head>
 <body>
+
+<div id="offline-banner">
+  <span style="color:var(--red);font-size:0.8rem">●</span>
+  <span style="color:var(--red);font-size:0.82rem;font-weight:500">Sei offline — i dati potrebbero non essere aggiornati</span>
+</div>
 
 <!-- APP -->
 <div id="app">
@@ -801,10 +817,15 @@ async function reloadAll() {
 
 // ── CATEGORIE ────────────────────────────────────────────────
 async function loadCategorie() {
-  const res = await apiGet({action:'getCategorie'});
-  if (!res.ok) throw new Error(res.error);
-  CATS = res.data;
-  buildCatSelects();
+  try {
+    const res = await apiGet({action:'getCategorie'});
+    if (!res.ok) throw new Error(res.error);
+    CATS = res.data;
+    buildCatSelects();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 function buildCatSelects() {
@@ -860,11 +881,16 @@ function toggleNewCat() {
 
 // ── CONTI ────────────────────────────────────────────────────
 async function loadConti() {
-  const res = await apiGet({action:'getConti'});
-  if (!res.ok) throw new Error(res.error);
-  CONTI = res.data;
-  renderContiList();
-  buildCatSelects();
+  try {
+    const res = await apiGet({action:'getConti'});
+    if (!res.ok) throw new Error(res.error);
+    CONTI = res.data;
+    renderContiList();
+    buildCatSelects();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 async function loadSummaryAnno() {
@@ -929,21 +955,25 @@ function renderContiList() {
 
 // ── SPESE ────────────────────────────────────────────────────
 async function loadSpese() {
-  updateMonthLabel();
-  const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
-  if (!res.ok) throw new Error(res.error);
-  currentSpese = res.data;
-  applyFilters();
+  try {
+    updateMonthLabel();
+    const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
+    if (!res.ok) throw new Error(res.error);
+    currentSpese = res.data;
+    applyFilters();
 
-  // Aggiorna summary mobile
-  const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
-  const mobTot = document.getElementById('mobile-tot');
-  const mobCount = document.getElementById('mobile-count');
-  const mobLbl = document.getElementById('mobile-month-label2');
-  if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
-  if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
-  if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
-
+    // Aggiorna summary mobile
+    const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
+    const mobTot = document.getElementById('mobile-tot');
+    const mobCount = document.getElementById('mobile-count');
+    const mobLbl = document.getElementById('mobile-month-label2');
+    if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
+    if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
+    if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 function updateMonthLabel() {
@@ -1273,59 +1303,64 @@ async function saveEditMovimento() {
 
 // ── INVESTIMENTI ─────────────────────────────────────────────
 async function loadInvestimenti() {
-  buildPiattButtons();
-  const res = await apiGet({action:'getInvestimenti', year:currentYear});
-  if (!res.ok) return;
-  const data = res.data;
+  try {
+    buildPiattButtons();
+    const res = await apiGet({action:'getInvestimenti', year:currentYear});
+    if (!res.ok) return;
+    const data = res.data;
 
-  // Ultimo snapshot per piattaforma
-  const byP = {};
-  [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
-  lastInvByPiatt = byP;
-  renderContiList();
+    // Ultimo snapshot per piattaforma
+    const byP = {};
+    [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
+    lastInvByPiatt = byP;
+    renderContiList();
 
-  const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
-  const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
-  const rendEur = totInv - totInv0;
-  const rendPct = totInv0 ? ((rendEur/totInv0)*100).toFixed(1) : 0;
+    const totInv  = Object.values(byP).reduce((s,r)=>s+r.valore, 0);
+    const totInv0 = Object.values(byP).reduce((s,r)=>s+(r.investito||r.valore), 0);
+    const rendEur = totInv - totInv0;
+    const rendPct = totInv0 ? ((rendEur/totInv0)*100).toFixed(1) : 0;
 
-  const _im = document.getElementById('inv-metrics'); if(_im) _im.innerHTML =
-    Object.entries(byP).map(([p,r]) => `
-      <div class="metric">
-        <div class="label">${p}</div>
-        <div class="value">€${fmt(r.valore)}</div>
-        ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
-      </div>`).join('')
-    + `<div class="metric">
-        <div class="label">Totale</div>
-        <div class="value">€${fmt(totInv)}</div>
-        ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
-       </div>`;
+    const _im = document.getElementById('inv-metrics'); if(_im) _im.innerHTML =
+      Object.entries(byP).map(([p,r]) => `
+        <div class="metric">
+          <div class="label">${p}</div>
+          <div class="value">€${fmt(r.valore)}</div>
+          ${r.investito ? `<div class="delta ${r.valore>=r.investito?'up':'dn'}">${r.valore>=r.investito?'↑':'↓'} €${fmt(Math.abs(r.valore-r.investito))}</div>` : ''}
+        </div>`).join('')
+      + `<div class="metric">
+          <div class="label">Totale</div>
+          <div class="value">€${fmt(totInv)}</div>
+          ${totInv0 ? `<div class="delta ${rendEur>=0?'up':'dn'}">${rendEur>=0?'↑':'↓'} ${Math.abs(rendPct)}%</div>` : ''}
+         </div>`;
 
-  // Panoramica — chiamata sempre, anche senza snapshot
-  renderPanoramica(totInv);
+    // Panoramica — chiamata sempre, anche senza snapshot
+    renderPanoramica(totInv);
 
-  // Grafico andamento
-  renderInvChart(data);
-  renderPatrimonioChart(data);
+    // Grafico andamento
+    renderInvChart(data);
+    renderPatrimonioChart(data);
 
-  // Lista
-  const el = document.getElementById('inv-list');
-  if (!el) return;
-  if (!data.length) { el.innerHTML='<div class="empty">Nessun snapshot ancora — aggiungine uno sopra</div>'; return; }
-  el.innerHTML = [...data].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,20).map(r => {
-    const rend = r.investito ? r.valore - r.investito : null;
-    return `<div class="row">
-      <div>
-        <div class="name">${r.piattaforma}</div>
-        <div class="sub">${new Date(r.data).toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        ${rend!==null?`<div class="prv" style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
-      </div>
-    </div>`;
-  }).join('');
+    // Lista
+    const el = document.getElementById('inv-list');
+    if (!el) return;
+    if (!data.length) { el.innerHTML='<div class="empty">Nessun snapshot ancora — aggiungine uno sopra</div>'; return; }
+    el.innerHTML = [...data].sort((a,b)=>new Date(b.data)-new Date(a.data)).slice(0,20).map(r => {
+      const rend = r.investito ? r.valore - r.investito : null;
+      return `<div class="row">
+        <div>
+          <div class="name">${r.piattaforma}</div>
+          <div class="sub">${new Date(r.data).toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          ${rend!==null?`<div class="prv" style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 let invChartInst = null;
@@ -1560,11 +1595,16 @@ function renderEntrate() {
 }
 
 async function loadEntrate() {
-  updateEntratMonthLabel();
-  const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
-  if (!res.ok) return;
-  currentEntrate = res.data;
-  renderEntrate();
+  try {
+    updateEntratMonthLabel();
+    const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
+    if (!res.ok) return;
+    currentEntrate = res.data;
+    renderEntrate();
+  } catch(e) {
+    if (!navigator.onLine) return;
+    throw e;
+  }
 }
 
 async function addEntrata() {
@@ -2031,6 +2071,13 @@ function togglePrivate() {
 }
 
 // Auto-start
+function _updateOfflineClass() {
+  document.body.classList.toggle('is-offline', !navigator.onLine);
+}
+window.addEventListener('online', _updateOfflineClass);
+window.addEventListener('offline', _updateOfflineClass);
+_updateOfflineClass(); // stato iniziale
+
 document.addEventListener('DOMContentLoaded', () => {
   if (localStorage.getItem('privateMode') === '1') {
     document.body.classList.add('private-mode');
