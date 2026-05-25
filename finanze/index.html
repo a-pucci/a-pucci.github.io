@@ -165,6 +165,23 @@
   .row .del-btn:hover  { opacity: 1; color: var(--red); }
   .row .edit-btn { background: none; border: none; cursor: pointer; color: var(--hint); font-size: 15px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; transition: opacity .15s, color .15s; }
   .row .edit-btn:hover { opacity: 1; color: var(--accent); }
+  /* ── PRIVATE MODE ── */
+  body.private-mode .metric .value,
+  body.private-mode .metric .delta,
+  body.private-mode .row .amt,
+  body.private-mode #mobile-tot,
+  body.private-mode .prv {
+    filter: blur(6px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .privacy-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 16px; padding: 0 2px;
+    line-height: 1; transition: color .15s;
+  }
+  .privacy-btn:hover { color: var(--text); }
+
   .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
   .modal-card { background:var(--card);border-radius:12px;padding:20px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.5); }
   .modal-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:16px; }
@@ -319,6 +336,7 @@
       <div class="dot loading" id="sdot"></div>
       <span id="stxt">connessione...</span>
       <button onclick="reloadAll()" style="background:none;border:none;cursor:pointer;color:var(--muted);margin-left:4px;font-size:14px;padding:0" title="Ricarica"><i class="ti ti-refresh"></i></button>
+      <button class="privacy-btn" onclick="togglePrivate()" id="privacy-btn" title="Modalità privata"><i class="ti ti-eye" id="privacy-icon"></i></button>
     </div>
   </div>
 
@@ -787,8 +805,8 @@ function renderContiList() {
     const saldoColor = c.saldo > 0 ? 'var(--green)' : c.saldo < 0 ? 'var(--red)' : 'var(--muted)';
     const valColor = color || 'var(--muted)';
     const right = (c.tipo === 'Investimento' || c.tipo === 'Piano pensione')
-      ? `<span style="font-family:var(--mono);font-size:14px;color:${valColor}">${snapVal != null ? '€'+fmtDec(snapVal) : '—'}</span>`
-      : `<span style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmtDec(c.saldo) : '—'}</span>`;
+      ? `<span class="prv" style="font-family:var(--mono);font-size:14px;color:${valColor}">${snapVal != null ? '€'+fmtDec(snapVal) : '—'}</span>`
+      : `<span class="prv" style="font-family:var(--mono);font-size:14px;color:${saldoColor}">${c.saldo != null ? '€'+fmtDec(c.saldo) : '—'}</span>`;
     return `<div class="row">
       <div><div class="name">${c.nome}</div><div class="sub">${c.tipo}</div></div>
       ${right}
@@ -1201,7 +1219,7 @@ async function loadInvestimenti() {
       </div>
       <div style="text-align:right">
         <div class="amt">€${r.valore.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        ${rend!==null?`<div style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
+        ${rend!==null?`<div class="prv" style="font-size:11px;font-family:var(--mono);color:${rend>=0?'var(--green)':'var(--red)'}">${rend>=0?'+':'-'} €${fmt(Math.abs(rend))}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1866,8 +1884,20 @@ async function importMfCsv() {
   }
 }
 
+function togglePrivate() {
+  const on = document.body.classList.toggle('private-mode');
+  const icon = document.getElementById('privacy-icon');
+  if (icon) icon.className = on ? 'ti ti-eye-off' : 'ti ti-eye';
+  localStorage.setItem('privateMode', on ? '1' : '0');
+}
+
 // Auto-start
 document.addEventListener('DOMContentLoaded', () => {
+  if (localStorage.getItem('privateMode') === '1') {
+    document.body.classList.add('private-mode');
+    const icon = document.getElementById('privacy-icon');
+    if (icon) icon.className = 'ti ti-eye-off';
+  }
   updateEntratMonthLabel();
   ['inv-data','e-date','q-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=todayISO; });
   const urlBox = document.getElementById('api-url-display'); if (urlBox) urlBox.textContent = API_URL;
