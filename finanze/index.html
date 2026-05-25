@@ -371,6 +371,10 @@
   <span style="color:var(--red);font-size:0.8rem">●</span>
   <span style="color:var(--red);font-size:0.82rem;font-weight:500">Sei offline — i dati potrebbero non essere aggiornati</span>
 </div>
+<div id="sync-banner" style="display:none;background:var(--accent-bg);border-bottom:1px solid rgba(201,245,66,0.25);padding:8px 16px;align-items:center;justify-content:space-between;gap:8px">
+  <span style="color:var(--accent);font-size:0.82rem;font-weight:500">✓ Sincronizzazione completata</span>
+  <button onclick="reloadAll();document.getElementById('sync-banner').style.display='none'" style="background:var(--accent-bg);border:1px solid rgba(201,245,66,0.3);color:var(--accent);font-size:0.78rem;padding:4px 12px;border-radius:var(--radius-sm);cursor:pointer">Ricarica</button>
+</div>
 
 <!-- APP -->
 <div id="app">
@@ -2078,7 +2082,23 @@ window.addEventListener('online', _updateOfflineClass);
 window.addEventListener('offline', _updateOfflineClass);
 _updateOfflineClass(); // stato iniziale
 
+function _showSyncBanner() {
+  const el = document.getElementById('sync-banner');
+  if (el) el.style.display = 'flex';
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'sync-complete') _showSyncBanner();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  // Fallback per browser senza Background Sync (es. Safari):
+  if (navigator.onLine) {
+    _flushPendingOps().catch(() => {});
+  }
+
   if (localStorage.getItem('privateMode') === '1') {
     document.body.classList.add('private-mode');
     const icon = document.getElementById('privacy-icon');
