@@ -53,39 +53,15 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## PRIORITÀ MEDIA
 
-### TASK — Convertire l'app in PWA (Progressive Web App)
-
-**Obiettivo:** rendere l'app installabile su home screen e funzionante offline (almeno con dati in cache).
-
-**Cosa fare:**
-
-1. **`manifest.json`** — aggiungere file manifest e linkarlo in `index.html`:
-   - `name`, `short_name`, `theme_color` (`#0f0f0f`), `background_color`
-   - `display: standalone`
-   - Icone 192×192 e 512×512 (generabili da `gen_icons.js` già presente)
-   - `start_url: /finanze/`
-
-2. **Service Worker (`sw.js`)** — registrarlo da `index.html` e implementare:
-   - Cache-first per asset statici (HTML, font CDN, Chart.js CDN)
-   - Network-first per le API call verso Apps Script (con fallback a cache se offline)
-   - Strategia cache: versioning del SW per invalidare la cache al deploy
-
-3. **Registrazione SW** — aggiungere snippet in `index.html`:
-   ```js
-   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/finanze/sw.js');
-   ```
-
-4. **Offline UX** — mostrare un banner/messaggio quando l'app è offline e serve dati dalla cache
-
-**File da creare/modificare:**
-- `finanze/manifest.json` (nuovo)
-- `finanze/sw.js` (nuovo)
-- `finanze/index.html` (aggiungere `<link rel="manifest">` e script registrazione SW)
-
-**Note:**
-- Il Cloudflare Worker (Basic Auth) deve lasciare passare le richieste a `sw.js` e `manifest.json` — verificare che non blocchi questi file
-- GitHub Pages serve da root del repo: i path devono essere relativi a `/finanze/`
-- Le icone sono già generabili con `gen_icons.js`
+### ~~TASK — Convertire l'app in PWA (Progressive Web App)~~ ✅ COMPLETATO
+**Fix applicati:**
+- `manifest.json` con name, short_name, theme_color `#c9f542`, display standalone, icone 192/512/maskable
+- `sw.js` con cache-first per app shell (Chart.js, font, Tabler Icons, index.html), Background Sync per `addSpesa`/`addEntrata`/`addInvestimento` offline, fallback Safari tramite flush manuale al DOMContentLoaded
+- IndexedDB (`finanze-db`, store `pending-ops`) per coda operazioni offline
+- `index.html`: registrazione SW, helpers IndexedDB, `apiPost()` modificato per accodare offline, banner `#offline-banner`, banner `#sync-banner`, feedback amber "⏳ Salvata offline" sul bottone salva spesa
+- Cloudflare Worker aggiornato con bypass auth per `/finanze/sw.js`, `/finanze/manifest.json`, `/finanze/icons/*`
+- Icone generate da `gen_icons.js` (simbolo € su sfondo `#0f0f0f`, accent `#c9f542`)
+- `CACHE_VERSION` in sw.js da incrementare ad ogni deploy che modifica file in cache
 
 ---
 
@@ -106,19 +82,8 @@ Valutare la scalabilità dell'approccio attuale che usa un foglio Google Sheets 
 
 ---
 
-### TASK — Valutazione fattibilità riscrittura in Flutter
-Valutare se vale la pena riscrivere questa app in Flutter per avere una app nativa multi-piattaforma.
-
-**Domande da rispondere:**
-- Pro: UX nativa, offline, installazione vera su iOS/Android, performance
-- Contro: complessità setup, distribuzione App Store/Play Store, mantenimento doppio codebase,
-  CORS e autenticazione Google Sheets da Flutter
-- L'attuale backend Apps Script è riutilizzabile? O serve un backend diverso?
-- Alternative: PWA potenziata (già parzialmente implementata), Capacitor/Ionic, React Native
-- Stima effort: quanto tempo richiederebbe la riscrittura?
-- Raccomandazione finale: quando ha senso farlo (mai, ora, dopo N anni di dati, ecc.)
-
-**Output atteso:** sezione di analisi con pro/contro e raccomandazione concreta.
+### ~~TASK — Valutazione fattibilità riscrittura in Flutter~~ ✅ COMPLETATO
+**Conclusione:** scelta PWA come alternativa nativa. L'app è ora installabile su iOS/Android con supporto offline tramite Background Sync. Riscrittura Flutter non necessaria allo stato attuale.
 
 ---
 
