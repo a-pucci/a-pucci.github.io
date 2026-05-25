@@ -67,18 +67,13 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## VALUTAZIONI / ANALISI
 
-### TASK — Valutazione scalabilità Google Sheets
-Valutare la scalabilità dell'approccio attuale che usa un foglio Google Sheets per anno.
-
-**Domande da rispondere:**
-- Quante chiamate API servono per visualizzare dati multi-anno (es. grafico trend 3 anni)?
-- Esiste un foglio "aggregato" che raccoglie i dati di tutti gli anni in un'unica vista?
-- È fattibile creare uno sheet `Riepilogo` che venga aggiornato automaticamente con i totali
-  mensili di ogni anno (tramite `IMPORTRANGE` o tramite Apps Script)?
-- Limiti delle API di Google Apps Script: quota giornaliera, timeout, dimensioni payload
-- Raccomandazione finale: continuare con l'approccio attuale, aggiungere aggregazione, o migrare?
-
-**Output atteso:** sezione di analisi con pro/contro e raccomandazione concreta.
+### ~~TASK — Valutazione scalabilità Google Sheets~~ ✅ COMPLETATO
+**Conclusione:** architettura attuale scala bene per 10+ anni di uso personale. Nessuna migrazione necessaria.
+- 6 chiamate API al caricamento, ognuna apre 1-2 spreadsheet (~300ms/spreadsheet)
+- Volume stimato dopo 10 anni: ~6.000 righe per file — ben sotto i limiti di Sheets
+- `getSummaryAnno_` aggrega già i dati mensili in una sola chiamata
+- Foglio Riepilogo non necessario
+- Unico miglioramento futuro utile: estendere `getSummaryAnno_` per accettare un range di anni (`startYear`/`endYear`) quando si vorrà aggiungere un grafico trend multi-anno
 
 ---
 
