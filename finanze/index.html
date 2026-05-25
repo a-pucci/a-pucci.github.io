@@ -1433,11 +1433,15 @@ async function addInvestimento() {
       valore, investito, rendimentoEur, rendimentoPct, data
     });
     if (res.ok) {
-      const vEl = document.getElementById('inv-valore'); if (vEl) vEl.value = '';
-      const iEl = document.getElementById('inv-investito'); if (iEl) iEl.value = '';
-      const dEl = document.getElementById('inv-data'); if (dEl) dEl.value = todayISO;
-      showMsg('inv-ok');
-      await loadInvestimenti();
+      if (res.queued) {
+        showMsg('inv-ok', '⏳ Salvato offline — verrà sincronizzato');
+      } else {
+        const vEl = document.getElementById('inv-valore'); if (vEl) vEl.value = '';
+        const iEl = document.getElementById('inv-investito'); if (iEl) iEl.value = '';
+        const dEl = document.getElementById('inv-data'); if (dEl) dEl.value = todayISO;
+        showMsg('inv-ok');
+        await loadInvestimenti();
+      }
     } else { showMsg('inv-err', res.error||'Errore'); }
   } catch(e) { showMsg('inv-err', e.message); }
 
@@ -1488,17 +1492,30 @@ async function addSpesa() {
       metodo: ''
     });
     if (res.ok) {
-      const aEl = document.getElementById('q-amount'); if (aEl) aEl.value = '';
-      const nEl = document.getElementById('q-note'); if (nEl) nEl.value = '';
-      if (btn) {
-        btn.classList.add('btn-success');
-        btn.innerHTML = '✓ Salvata';
-        setTimeout(() => {
-          btn.classList.remove('btn-success');
-          btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
-        }, 1800);
+      if (res.queued) {
+        if (btn) {
+          btn.style.background = 'var(--amber)';
+          btn.style.color = '#0f0f0f';
+          btn.innerHTML = '⏳ Salvata offline';
+          setTimeout(() => {
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+          }, 3000);
+        }
+      } else {
+        const aEl = document.getElementById('q-amount'); if (aEl) aEl.value = '';
+        const nEl = document.getElementById('q-note'); if (nEl) nEl.value = '';
+        if (btn) {
+          btn.classList.add('btn-success');
+          btn.innerHTML = '✓ Salvata';
+          setTimeout(() => {
+            btn.classList.remove('btn-success');
+            btn.innerHTML = '<i class="ti ti-check"></i> Salva spesa';
+          }, 1800);
+        }
+        await loadSpese();
       }
-      await loadSpese();
     } else { showMsg('spesa-err', res.error || 'Errore'); }
   } catch(err) { showMsg('spesa-err', err.message); }
 
@@ -1563,10 +1580,14 @@ async function addEntrata() {
   try {
     const res = await apiPost({action:'addEntrata', importo:amt, tipo, conto, nota:note, data, year});
     if (res.ok) {
-      const aEl = document.getElementById('e-amount'); if (aEl) aEl.value = '';
-      const nEl = document.getElementById('e-note'); if (nEl) nEl.value = '';
-      const dEl = document.getElementById('e-date'); if (dEl) dEl.value = todayISO;
-      showMsg('entrata-ok'); await loadEntrate();
+      if (res.queued) {
+        showMsg('entrata-ok', '⏳ Salvata offline — verrà sincronizzata');
+      } else {
+        const aEl = document.getElementById('e-amount'); if (aEl) aEl.value = '';
+        const nEl = document.getElementById('e-note'); if (nEl) nEl.value = '';
+        const dEl = document.getElementById('e-date'); if (dEl) dEl.value = todayISO;
+        showMsg('entrata-ok'); await loadEntrate();
+      }
     } else { showMsg('entrata-err', res.error||'Errore'); }
   } catch(err) { showMsg('entrata-err', err.message); }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Salva entrata'; }
