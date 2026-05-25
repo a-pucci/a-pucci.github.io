@@ -175,6 +175,16 @@
     user-select: none;
     pointer-events: none;
   }
+  body.private-mode #patrimonioChart,
+  body.private-mode #trendAnnoChart,
+  body.private-mode #invChart,
+  body.private-mode #cat-accordion,
+  body.private-mode #subcat-flat,
+  body.private-mode #tx-list {
+    filter: blur(8px);
+    user-select: none;
+    pointer-events: none;
+  }
   .privacy-btn {
     background: none; border: none; cursor: pointer;
     color: var(--muted); font-size: 16px; padding: 0 2px;

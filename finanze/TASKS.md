@@ -7,114 +7,89 @@ Tutti i task riguardano `index.html` (frontend) e/o `FinanzePersonali_AppsScript
 
 ## PRIORITÀ ALTA
 
-### ~~TASK 1 — Stabilità JS: audit completo funzioni mancanti~~ ✅ COMPLETATO
+### ~~TASK — Tab Spese: formato numeri `##,##`~~ ✅ COMPLETATO
 **Fix applicati:**
-- Tutte le funzioni verificate — nessuna mancante
-- Null guard aggiunti: `setStatus`, `renderAccordion`, `renderSubcatFlat`, `renderTxList`, `loadInvestimenti` (inv-list), `addSpesa`/`addInvestimento`/`addEntrata` (btn)
-- `loadEntrate()` aggiunta in `reloadAll()` — era mai chiamata al caricamento
-- `api-url-display` popolato in `DOMContentLoaded`
-- HTML mobile-summary aggiunto in tab Spese (`mobile-tot`, `mobile-count`, `mobile-month-label2`)
-- Dead code rimosso: forEach no-op in `buildCatSelects`
-- Init date deduplicato; indentazione blocco mobile corretta
-- Preview verificata su localhost:8080
+- `fmtDec()` (già esistente, `it-IT` locale, 2 decimali) applicata sistematicamente in tutta la tab Spese
+- Sostituiti tutti i `.toFixed(2)` con `fmtDec()`: renderAccordion (totale cat + subcat), renderSubcatFlat, renderTxList
+- Metriche `#spese-metrics` (totale e media): da `fmt()` (0 decimali) a `fmtDec()` (2 decimali)
+- Totale mobile `#mobile-tot`: da `fmt()` a `fmtDec()`
+- Per coerenza: lista entrate in renderEntrate aggiornata allo stesso modo
+- Risultato: tutti gli importi mostrano separatore migliaia (punto) e 2 decimali con virgola — es. `1.234,56 €`
 
 ---
 
-### TASK 2 — Tab Panoramica: patrimonio totale reale ✅ COMPLETATO
+### ~~TASK — Modalità privata (toggle oscura i numeri)~~ ✅ COMPLETATO
 **Fix applicati:**
-
-**Apps Script (`FinanzePersonali_AppsScript.js`):**
-- Colonna `Saldo` aggiunta al foglio Conti (COLUMNS, DEFAULT_ACCOUNTS, getConti_, addConto_)
-- Funzione `updateSaldoConto_` aggiunta, chiamata da addSpesa_ e addEntrata_ per aggiornare il saldo automaticamente
-
-**Frontend (`index.html`):**
-- `currentEntrate` resa variabile globale
-- Campo `q-conto` (opzionale) aggiunto al form spese; `addSpesa` lo passa all'API
-- `renderPanoramica`: riscritta con 5 metriche (patrimonio totale, investimenti, saldo conti, spese mese, risparmio mese)
-- Aggiunta `renderDonutChart` per allocazione piattaforme su `#donutChart`
-- `renderContiList`: saldo colorato per conti correnti, badge `inv` per investimenti
-- Aggiunta `renderPatrimonioChart` per andamento patrimonio su `#patrimonioChart` (canvas nuovo)
+- Bottone occhio nella status-pill dell'header (icona `ti-eye` / `ti-eye-off` da Tabler Icons)
+- `togglePrivate()`: alterna `body.private-mode`, aggiorna icona, salva in `localStorage`
+- CSS `body.private-mode`: `filter: blur(6px)` su `.metric .value`, `.metric .delta`, `.row .amt`, `#mobile-tot`, `.prv`
+- CSS `body.private-mode`: `filter: blur(8px)` su `#patrimonioChart`, `#trendAnnoChart`, `#invChart`, `#cat-accordion`, `#subcat-flat`, `#tx-list`
+- Aggiunta classe `prv` agli span inline di `renderContoRow` (saldi conti/investimenti) e al div rendimento in lista investimenti
+- Stato ripristinato da `localStorage` al `DOMContentLoaded`
 
 ---
 
-### TASK 3 — Import CSV Trade Republic e Moneyfarm
+## PRIORITÀ ALTA
+
+### TASK — Tab Spese: separare Investimenti da Spese, aggiungere riquadro Uscite
+Attualmente la tab Spese mostra solo le spese mensili. Gli investimenti (snapshot) sono in una tab
+separata ma non vengono sommati alle uscite del mese.
+
 **Cosa fare:**
-- Aggiungere sezione "Importa" nella tab Impostazioni (o tab separata)
-- **Trade Republic:** parsing CSV con colonne tipiche TR (Data, Tipo, Strumento, Quantità, Prezzo, Importo, Valuta)
-  - Mappare automaticamente le transazioni in spese/investimenti
-  - Mostrare preview tabellare prima di salvare
-  - Bottone "Salva tutto su Sheets"
-- **Moneyfarm:** parsing CSV/Excel rendiconto Moneyfarm
-  - Estrarre valore portafoglio per data → salvare come snapshot investimenti
-  - Mostrare preview prima di salvare
-- Gestire encoding UTF-8 e separatori (virgola, punto e virgola)
-- Usare `FileReader` API per leggere i file lato client
+- Aggiungere una metrica "Uscite" = totale spese mese + totale investimenti mese
+- Le spese rimangono visibili come voce separata; gli investimenti del mese compaiono come seconda voce
+- Valutare se serve una nuova chiamata API per avere il totale investimenti del mese corrente,
+  o se è ricavabile dai dati già in memoria (`currentInvestimenti` o simile)
+- Il riquadro "Uscite" va evidenziato come totale principale (font più grande o colore accent)
+
+**Nota:** verificare come sono strutturati i dati investimenti per capire se si tratta di snapshot
+(valore totale piattaforma) o di singoli versamenti periodici.
 
 ---
 
-### ~~TASK 4 — Eliminazione movimenti~~ ✅ COMPLETATO
-**Fix applicati:**
-- Bottone ✕ aggiunto su ogni riga di Spese (`renderTxList`) e Entrate (`renderEntrate`)
-- Conferma `confirm()` prima dell'eliminazione
-- Chiamata `deleteRow` via POST verso Apps Script con `{ sheetKey, id, year }`
-- Rimozione immediata da `currentSpese`/`currentEntrate` + re-render senza reload
-- `renderEntrate` estratta da `loadEntrate` come funzione separata riutilizzabile
-- CSS `.del-btn` aggiunto: visibile su hover con colore rosso
+### TASK — Tab Spese: grafico Distribuzione full-width con percentuali, rimuovere Trend mensile
+Il grafico "Distribuzione" (donut `#spesaChart`) è attualmente affiancato al grafico "Trend mensile"
+(`#trendChart`) in un layout `two-col`. Il trend mensile è ridondante con il grafico in Panoramica.
+
+**Cosa fare:**
+- Rimuovere la card "Trend mensile" (`#trendChart` e la relativa logica `renderTrendChart`)
+- Portare la card "Distribuzione" a full width (rimuovere il wrapper `two-col`)
+- Aggiungere a destra del donut una legenda con le percentuali per ogni categoria:
+  nome categoria, colore dot, percentuale e importo — ordinata per importo decrescente
+- Layout legenda: lista verticale affiancata al donut su desktop, sotto su mobile
 
 ---
 
-## PRIORITÀ MEDIA
+## VALUTAZIONI / ANALISI
 
-### ~~TASK 5 — Modifica movimenti~~ ✅ COMPLETATO
-**Fix applicati:**
-- Bottone ✎ aggiunto su ogni riga di Spese e Entrate, accanto al ✕ elimina
-- Modal overlay con form precompilato (spesa: importo, cat, subcat, conto, nota, data; entrata: importo, tipo, conto, nota, data)
-- `openEditMovimento(sheetKey, id, year)` popola il form dai dati in memoria (`currentSpese`/`currentEntrate`)
-- `saveEditMovimento()` chiama `updateRow` via POST → ricarica la lista aggiornata
-- `updateRow_` aggiunto in Apps Script: trova la riga per ID e aggiorna le colonne 2+ con i nuovi valori
-- Chiusura modal cliccando fuori o sul ✕
+### TASK — Valutazione scalabilità Google Sheets
+Valutare la scalabilità dell'approccio attuale che usa un foglio Google Sheets per anno.
 
----
+**Domande da rispondere:**
+- Quante chiamate API servono per visualizzare dati multi-anno (es. grafico trend 3 anni)?
+- Esiste un foglio "aggregato" che raccoglie i dati di tutti gli anni in un'unica vista?
+- È fattibile creare uno sheet `Riepilogo` che venga aggiornato automaticamente con i totali
+  mensili di ogni anno (tramite `IMPORTRANGE` o tramite Apps Script)?
+- Limiti delle API di Google Apps Script: quota giornaliera, timeout, dimensioni payload
+- Raccomandazione finale: continuare con l'approccio attuale, aggiungere aggregazione, o migrare?
 
-### ~~TASK 7 — Panoramica: grafico andamento mensile spese/entrate~~ ✅ COMPLETATO
-**Fix applicati:**
-- `getSummaryAnno_` in Apps Script: legge Spese e Entrate dell'anno, raggruppa per mese, ritorna 12 somme mensili
-- `loadSummaryAnno()` chiamata in parallelo in `reloadAll()` (una sola chiamata API)
-- `renderTrendAnnoChart()`: line chart Chart.js entrate (verde) vs spese (rosso), fill leggero, scala € sull'asse Y
-- Usa `MONTHS_SHORT` esistente per le etichette; null/shape guard preserva il canvas per render futuri
+**Output atteso:** sezione di analisi con pro/contro e raccomandazione concreta.
 
 ---
 
-### ~~TASK 8 — Mobile UX miglioramenti~~ ✅ COMPLETATO
-**Fix applicati:**
-- Nav icon-only sotto 380px (`@media (max-width: 380px)` nasconde gli `<span>` di testo)
-- Feedback visivo salvataggio: bottone diventa verde con "✓ Salvata" per 1.8s dopo `addSpesa()` con successo
-- PWA: `manifest.json` + meta tag per installazione come app su home screen iOS/Android
-- `icon.svg` creata per icona app (€ su sfondo nero)
+### TASK — Valutazione fattibilità riscrittura in Flutter
+Valutare se vale la pena riscrivere questa app in Flutter per avere una app nativa multi-piattaforma.
 
----
+**Domande da rispondere:**
+- Pro: UX nativa, offline, installazione vera su iOS/Android, performance
+- Contro: complessità setup, distribuzione App Store/Play Store, mantenimento doppio codebase,
+  CORS e autenticazione Google Sheets da Flutter
+- L'attuale backend Apps Script è riutilizzabile? O serve un backend diverso?
+- Alternative: PWA potenziata (già parzialmente implementata), Capacitor/Ionic, React Native
+- Stima effort: quanto tempo richiederebbe la riscrittura?
+- Raccomandazione finale: quando ha senso farlo (mai, ora, dopo N anni di dati, ecc.)
 
-## PRIORITÀ BASSA
-
-### ~~TASK 10 — Ricerca e filtri spese~~ ✅ COMPLETATO
-**Fix applicati:**
-- Barra filtri aggiunta sopra il view-toggle (testo libero, categoria, min/max importo)
-- `activeFilters` come stato globale; `getFilteredSpese()` applica i filtri a `currentSpese`
-- `applyFilters()` aggiorna tutte e 3 le viste + grafico + metriche in un colpo solo
-- Filtri persistenti al cambio mese: `loadSpese()` chiama `applyFilters()` invece delle singole render
-- `buildCatSelects()` popola anche `#f-cat`
-- Label metriche cambia in "Spese filtrate" quando filtri attivi
-- Contatore "N di M movimenti" sotto la barra quando filtri attivi
-
----
-
-### ~~TASK 11 — Note e documentazione Apps Script~~ ✅ COMPLETATO
-**Fix applicati:**
-- JSDoc aggiunto a tutte le funzioni di `FinanzePersonali_AppsScript.js` (parametri, return type, descrizione)
-- `nuovoAnno(year)` aggiunta: crea cartella anno, Spese/Entrate/Investimenti, aggiorna PropertiesService
-  - Da eseguire manualmente da script.google.com a inizio anno
-  - Default: anno corrente + 1 se non si passa un parametro
-  - Non crea il foglio Budget (rimosso dall'app)
+**Output atteso:** sezione di analisi con pro/contro e raccomandazione concreta.
 
 ---
 
@@ -137,7 +112,6 @@ all'API Apps Script falliranno per CORS. Per testare:
 
 ### Workflow consigliato
 1. Leggere `CONTEXT.md` integralmente
-2. Fare l'audit del TASK 1 prima di tutto il resto
-3. Per ogni task: modificare `index.html`, testare su GitHub Pages, verificare console errors
-4. Per i task che richiedono modifiche Apps Script: aggiornare `FinanzePersonali_AppsScript.js`,
+2. Per ogni task: modificare `index.html`, testare su GitHub Pages, verificare console errors
+3. Per i task che richiedono modifiche Apps Script: aggiornare `FinanzePersonali_AppsScript.js`,
    incollare in script.google.com, ridistribuire (**Distribuisci → Gestisci distribuzioni → nuova versione**)
