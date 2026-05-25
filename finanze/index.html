@@ -1374,9 +1374,10 @@ let selectedQConto = '';
 function buildQContoButtons() {
   const wrap = document.getElementById('q-conto-wrap');
   if (!wrap) return;
-  if (!CONTI.length) { wrap.innerHTML = ''; return; }
+  const contiCorrenti = CONTI.filter(c => c.tipo === 'Conto corrente');
+  if (!contiCorrenti.length) { wrap.innerHTML = ''; return; }
   const prev = selectedQConto;
-  wrap.innerHTML = CONTI.map(c => `
+  wrap.innerHTML = contiCorrenti.map(c => `
     <button onclick="selectQConto('${c.nome}', this)"
       style="padding:6px 14px;border-radius:var(--radius-sm);border:1px solid var(--border2);
              background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s">
@@ -1387,7 +1388,7 @@ function buildQContoButtons() {
   let found = null;
   btns.forEach(b => { if (b.textContent.trim() === toSelect) found = b; });
   if (found) selectQConto(toSelect, found);
-  else if (btns.length) selectQConto(CONTI[0].nome, btns[0]);
+  else if (btns.length) selectQConto(contiCorrenti[0].nome, btns[0]);
 }
 
 function selectQConto(nome, btn) {
