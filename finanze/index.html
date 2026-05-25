@@ -824,7 +824,7 @@ async function loadSpese() {
   const mobTot = document.getElementById('mobile-tot');
   const mobCount = document.getElementById('mobile-count');
   const mobLbl = document.getElementById('mobile-month-label2');
-  if (mobTot) mobTot.textContent = '€' + fmt(totM);
+  if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
   if (mobCount) mobCount.textContent = currentSpese.length;
   if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
 
@@ -846,9 +846,9 @@ function renderSpeseMetrics() {
   const avg = spese.length ? tot/spese.length : 0;
   const label = hasFilter ? 'Spese filtrate' : 'Spese totali';
   const _sm = document.getElementById('spese-metrics'); if(_sm) _sm.innerHTML = `
-    <div class="metric"><div class="label">${label}</div><div class="value">€${fmt(tot)}</div></div>
+    <div class="metric"><div class="label">${label}</div><div class="value">€${fmtDec(tot)}</div></div>
     <div class="metric"><div class="label">Transazioni</div><div class="value">${spese.length}</div></div>
-    <div class="metric"><div class="label">Media</div><div class="value">${spese.length?'€'+fmt(avg):'—'}</div></div>`;
+    <div class="metric"><div class="label">Media</div><div class="value">${spese.length?'€'+fmtDec(avg):'—'}</div></div>`;
 }
 
 function getFilteredSpese() {
@@ -944,7 +944,7 @@ function renderAccordion() {
           <span style="font-size:11px;color:var(--hint)">${pct}%</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-family:var(--mono);font-size:14px">€${data.total.toFixed(2)}</span>
+          <span style="font-family:var(--mono);font-size:14px">€${fmtDec(data.total)}</span>
           <i class="ti ti-chevron-down" id="${id}c" style="font-size:12px;color:var(--hint);transition:transform .2s"></i>
         </div>
       </div>
@@ -953,7 +953,7 @@ function renderAccordion() {
           <div class="acc-sub">
             <span style="color:var(--muted)">${sub}</span>
             <div style="text-align:right">
-              <div style="font-family:var(--mono);font-size:13px">€${amt.toFixed(2)}</div>
+              <div style="font-family:var(--mono);font-size:13px">€${fmtDec(amt)}</div>
               <div style="font-size:11px;color:var(--hint)">${Math.round(amt/data.total*100)}% di ${cat}</div>
             </div>
           </div>`).join('')}
@@ -987,7 +987,7 @@ function renderSubcatFlat() {
         <span class="cat-dot" style="background:${color}"></span>
         <div><div class="name">${item.sub}</div><div class="sub">${item.cat}</div></div>
       </div>
-      <span class="amt">€${item.amt.toFixed(2)}</span>
+      <span class="amt">€${fmtDec(item.amt)}</span>
     </div>`;
   }).join('');
 }
@@ -1010,7 +1010,7 @@ function renderTxList() {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
-        <span class="amt">€${e.importo.toFixed(2)}</span>
+        <span class="amt">€${fmtDec(e.importo)}</span>
         <button class="edit-btn" onclick="openEditMovimento('spese','${e.id}','${year}')" title="Modifica">✎</button>
         <button class="del-btn" onclick="deleteMovimento('spese','${e.id}','${year}')" title="Elimina">✕</button>
       </div>
@@ -1417,7 +1417,7 @@ function renderEntrate() {
   el.innerHTML = [...entrate].sort((a,b)=>new Date(b.data)-new Date(a.data)).map(e => {
     const d = new Date(e.data);
     const year = e.data ? e.data.slice(0,4) : currentEntrateYear;
-    return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="amt" style="color:var(--green)">+€${e.importo.toFixed(2)}</span><button class="edit-btn" onclick="openEditMovimento('entrate','${e.id}','${year}')" title="Modifica">✎</button><button class="del-btn" onclick="deleteMovimento('entrate','${e.id}','${year}')" title="Elimina">✕</button></div></div>`;
+    return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="amt" style="color:var(--green)">+€${fmtDec(e.importo)}</span><button class="edit-btn" onclick="openEditMovimento('entrate','${e.id}','${year}')" title="Modifica">✎</button><button class="del-btn" onclick="deleteMovimento('entrate','${e.id}','${year}')" title="Elimina">✕</button></div></div>`;
   }).join('');
 }
 
