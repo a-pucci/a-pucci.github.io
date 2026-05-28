@@ -593,16 +593,7 @@
         <input type="number" id="e-amount" placeholder="0,00" step="0.01" inputmode="decimal" />
       </div>
       <div class="selects-row">
-        <select id="e-tipo">
-          <option value="">Tipo...</option>
-          <option>Stipendio</option>
-          <option>Freelance</option>
-          <option>Bonus</option>
-          <option>Dividendi</option>
-          <option>Rimborso</option>
-          <option>Regalo</option>
-          <option>Altro</option>
-        </select>
+        <select id="e-tipo"><option value="">Tipo...</option></select>
         <select id="e-conto">
           <option value="">Conto...</option>
         </select>
@@ -819,14 +810,28 @@ async function reloadAll() {
 // ── CATEGORIE ────────────────────────────────────────────────
 async function loadCategorie() {
   try {
-    const res = await apiGet({action:'getCategorie'});
+    const [res, resE] = await Promise.all([
+      apiGet({action:'getCategorie'}),
+      apiGet({action:'getCategorieEntrate'})
+    ]);
     if (!res.ok) throw new Error(res.error);
     CATS = res.data;
+    if (resE.ok) { CATS_ENTRATE = resE.data; buildEntrateSelects(); }
     buildCatSelects();
   } catch(e) {
     if (!navigator.onLine) return;
     throw e;
   }
+}
+
+function buildEntrateSelects() {
+  ['e-tipo', 'edit-e-tipo'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Tipo...</option>' +
+      CATS_ENTRATE.map(c => `<option${c === prev ? ' selected' : ''}>${c}</option>`).join('');
+  });
 }
 
 function buildCatSelects() {
@@ -1369,6 +1374,7 @@ let patrimonioInst = null;
 let lastInvByPiatt = {};
 let selectedPiatt = '';
 let selectedQConto = '';
+let CATS_ENTRATE = [];
 
 function buildQContoButtons() {
   const wrap = document.getElementById('q-conto-wrap');
@@ -2187,11 +2193,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <input type="number" id="edit-e-amount" placeholder="0,00" step="0.01" inputmode="decimal" />
       </div>
       <div class="selects-row">
-        <select id="edit-e-tipo">
-          <option value="">Tipo...</option>
-          <option>Stipendio</option><option>Freelance</option><option>Bonus</option>
-          <option>Dividendi</option><option>Rimborso</option><option>Regalo</option><option>Altro</option>
-        </select>
+        <select id="edit-e-tipo"><option value="">Tipo...</option></select>
         <select id="edit-e-conto"><option value="">Conto...</option></select>
       </div>
       <input type="text" id="edit-e-note" placeholder="Nota (opzionale)" style="margin-bottom:8px;margin-top:8px" />

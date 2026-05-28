@@ -277,7 +277,7 @@ function setupBudget_(ss) {
   if (catId) {
     try {
       const catSS = SpreadsheetApp.openById(catId);
-      const catSheet = catSS.getSheets()[0];
+      const catSheet = catSS.getSheetByName('Uscite') || catSS.getSheets()[0];
       const data = catSheet.getDataRange().getValues().slice(1)
         .filter(r => r[4] === 'TRUE' || r[4] === true);
       if (data.length > 0) {
@@ -342,7 +342,8 @@ function doGet(e) {
   try {
     let result;
     switch(action) {
-      case 'getCategorie':    result = getCategorie_();    break;
+      case 'getCategorie':         result = getCategorie_();         break;
+      case 'getCategorieEntrate':  result = getCategorieEntrate_();  break;
       case 'getConti':        result = getConti_();        break;
       case 'getSpese':        result = getSpese_(params);  break;
       case 'getEntrate':      result = getEntrate_(params);break;
@@ -399,14 +400,38 @@ function doPost(e) {
  * @returns {{ ok: boolean, data: Object.<string, {color: string, icon: string, subs: string[]}> }}
  */
 function getCategorie_() {
-  const data = readSheet_('ID_CATEGORIE');
-  const cats = {};
+  const props = PropertiesService.getScriptProperties();
+  const id    = props.getProperty('ID_CATEGORIE');
+  if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
+  const sheet = SpreadsheetApp.openById(id).getSheetByName('Uscite');
+  if (!sheet) throw new Error('Foglio "Uscite" non trovato in Categorie');
+  const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
+  const cats  = {};
   data.forEach(row => {
     const [cat, sub, color, icon, active] = row;
     if (active !== 'TRUE' && active !== true) return;
     if (!cats[cat]) cats[cat] = { color, icon, subs: [] };
     if (sub) cats[cat].subs.push(sub);
   });
+  return { ok: true, data: cats };
+}
+
+/**
+ * Legge le categorie entrate dal foglio "Entrate" del file Categorie.
+ * Schema: Categoria | Attiva
+ * @returns {{ ok: boolean, data: string[] }}
+ */
+function getCategorieEntrate_() {
+  const props = PropertiesService.getScriptProperties();
+  const id    = props.getProperty('ID_CATEGORIE');
+  if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
+  const sheet = SpreadsheetApp.openById(id).getSheetByName('Entrate');
+  if (!sheet) throw new Error('Foglio "Entrate" non trovato in Categorie');
+  const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
+  const cats  = data
+    .filter(r => r[1] === 'TRUE' || r[1] === true)
+    .map(r => String(r[0]).trim())
+    .filter(Boolean);
   return { ok: true, data: cats };
 }
 
@@ -661,7 +686,7 @@ function addInvestimento_(body) {
 function addCategoria_(body) {
   const props = PropertiesService.getScriptProperties();
   const ss    = SpreadsheetApp.openById(props.getProperty('ID_CATEGORIE'));
-  const sheet = ss.getSheets()[0];
+  const sheet = ss.getSheetByName('Uscite') || ss.getSheets()[0];
   sheet.appendRow([
     body.categoria, body.sottocategoria || '',
     body.colore || '#888780', body.icona || 'dots', 'TRUE'
