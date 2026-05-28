@@ -65,7 +65,7 @@ Finanza/
 
 **URL endpoint:**
 ```
-https://script.google.com/macros/s/AKfycbyDLp-_55rEWFptBM93KXkDZ-d1JoQEqSeGfsCE0XicqVrQtmFn9xCLSdgB7inFXps/exec
+https://script.google.com/macros/s/AKfycbzZ43n32Z58Gp-EtfSao9BIJ4KnZNG8uPfzm5nUM8YSly-SdiKIENkhNDTXKjkZpb7L/exec
 ```
 
 ### Azioni GET disponibili
