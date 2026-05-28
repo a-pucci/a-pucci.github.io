@@ -607,7 +607,6 @@
           <option value="">Conto...</option>
         </select>
       </div>
-      <input type="text" id="e-note" placeholder="Nota (opzionale)" style="margin-bottom:8px;margin-top:8px" />
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
         <input type="date" id="e-date" style="flex:1;min-height:36px;font-size:14px" />
@@ -1643,7 +1642,7 @@ async function addEntrata() {
   const amt  = parseFloat(document.getElementById('e-amount').value);
   const tipo = document.getElementById('e-tipo').value;
   const conto= document.getElementById('e-conto').value;
-  const note = document.getElementById('e-note').value;
+  const note = '';
   const data = document.getElementById('e-date').value || todayISO;
   const year = data.slice(0,4);
   if (!amt || !tipo) { showMsg('entrata-err','Inserisci importo e tipo'); return; }
