@@ -915,8 +915,11 @@ function renderContiList() {
   // Populate e-conto select
   const contoSel = document.getElementById('e-conto');
   if (contoSel) {
-    contoSel.innerHTML = '<option value="">Conto...</option>';
-    CONTI.forEach(c => contoSel.innerHTML += `<option value="${c.nome}">${c.nome}</option>`);
+    const byTipo = CONTI.reduce((acc, c) => { (acc[c.tipo] = acc[c.tipo] || []).push(c); return acc; }, {});
+    contoSel.innerHTML = '<option value="">Conto...</option>' +
+      Object.entries(byTipo).map(([tipo, conti]) =>
+        `<optgroup label="${tipo}">${conti.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('')}</optgroup>`
+      ).join('');
   }
   buildQContoButtons();
   if (!CONTI.length) { el.innerHTML='<div class="empty">Nessun conto configurato</div>'; return; }
