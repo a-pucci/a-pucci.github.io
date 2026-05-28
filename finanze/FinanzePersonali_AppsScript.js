@@ -6,6 +6,30 @@
 //  Poi: Distribuisci → Nuova distribuzione → App web
 // ============================================================
 
+// ── Diagnostica ─────────────────────────────────────────────
+
+/**
+ * Esegui questa funzione dallo Script Editor (Run → diagnostica) per
+ * verificare le Properties registrate e i valori letti dal foglio Conti.
+ * Non richiede ridistribuzione.
+ */
+function diagnostica() {
+  const props = PropertiesService.getScriptProperties().getProperties();
+  Logger.log('=== PROPERTIES ===');
+  Object.entries(props).forEach(([k, v]) => Logger.log(k + ' = ' + v));
+
+  Logger.log('\n=== CONTI (prime 5 righe) ===');
+  try {
+    const id = props['ID_CONTI'];
+    if (!id) { Logger.log('ID_CONTI non trovato'); return; }
+    const ss    = SpreadsheetApp.openById(id);
+    Logger.log('File Conti: ' + ss.getName() + ' — ' + ss.getUrl());
+    const sheet = ss.getSheets()[0];
+    const data  = sheet.getDataRange().getValues();
+    data.slice(0, 6).forEach((r, i) => Logger.log('Row ' + i + ': ' + JSON.stringify(r)));
+  } catch(e) { Logger.log('Errore lettura Conti: ' + e); }
+}
+
 // ── Configurazione ──────────────────────────────────────────
 const CONFIG = {
   ROOT_FOLDER_NAME: 'Finanza',
