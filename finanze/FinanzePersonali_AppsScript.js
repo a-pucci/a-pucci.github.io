@@ -352,6 +352,26 @@ function generateId_() {
   return Utilities.getUuid().split('-')[0];
 }
 
+// ── Parsing numeri ───────────────────────────────────────────
+
+/**
+ * Parsa un valore numerico proveniente da Sheets, accettando sia il
+ * formato italiano (##,## con punto come separatore migliaia)
+ * sia il formato internazionale (##.##).
+ * Se il valore è già un numero lo restituisce direttamente.
+ * @param {*} val - Valore da parsare (number, string, ecc.)
+ * @returns {number}
+ */
+function parseNum_(val) {
+  if (typeof val === 'number') return val;
+  const s = String(val).trim().replace(/[^\d,.-]/g, '');
+  if (!s) return 0;
+  // Formato italiano: virgola come decimale (es. "594,74" o "1.234,56")
+  // → rimuove i punti (separatori migliaia), sostituisce la virgola con punto
+  if (s.includes(',')) return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+  return parseFloat(s) || 0;
+}
+
 // ── doGet: lettura dati per la dashboard ─────────────────────
 
 /**
@@ -470,7 +490,7 @@ function getConti_() {
     .map(r => ({
       id: r[0], nome: r[1], tipo: r[2],
       piattaforma: r[3], valuta: r[5], note: r[6],
-      saldo: parseFloat(r[8]) || 0
+      saldo: parseNum_(r[8])
     }));
   return { ok: true, data: conti };
 }
@@ -487,7 +507,7 @@ function getSpese_(params) {
 
   const data = readSheetByName_('Spese_' + year);
   let rows = data.map(r => ({
-    id: r[0], data: r[1], importo: parseFloat(r[2]) || 0,
+    id: r[0], data: r[1], importo: parseNum_(r[2]),
     categoria: r[3], sottocategoria: r[4], nota: r[5],
     conto: r[6], metodo: r[7]
   }));
@@ -513,7 +533,7 @@ function getEntrate_(params) {
   const month = params.month || null;
   const data  = readSheetByName_('Entrate_' + year);
   let rows = data.map(r => ({
-    id: r[0], data: r[1], importo: parseFloat(r[2]) || 0,
+    id: r[0], data: r[1], importo: parseNum_(r[2]),
     tipo: r[3], nota: r[4], conto: r[5]
   }));
   if (month) {
@@ -535,8 +555,8 @@ function getInvestimenti_(params) {
   const data = readSheetByName_('Investimenti_' + year);
   const rows = data.map(r => ({
     data: r[0], piattaforma: r[1], conto: r[2], strumento: r[3],
-    valore: parseFloat(r[4]) || 0, investito: parseFloat(r[5]) || 0,
-    rendimentoEur: parseFloat(r[6]) || 0, rendimentoPct: parseFloat(r[7]) || 0
+    valore: parseNum_(r[4]), investito: parseNum_(r[5]),
+    rendimentoEur: parseNum_(r[6]), rendimentoPct: parseNum_(r[7])
   }));
   return { ok: true, data: rows };
 }
@@ -551,7 +571,7 @@ function getBudget_(params) {
   const data = readSheetByName_('Budget_' + year);
   const rows = data.map(r => ({
     categoria: r[0], sottocategoria: r[1],
-    mensili: r.slice(2).map(v => parseFloat(v) || 0)
+    mensili: r.slice(2).map(v => parseNum_(v))
   }));
   return { ok: true, data: rows };
 }
@@ -621,7 +641,7 @@ function getSummaryAnno_(params) {
     const spese = readSheetByName_('Spese_' + year);
     spese.forEach(r => {
       const m = new Date(r[1]).getMonth();
-      speseMensili[m] += parseFloat(r[2]) || 0;
+      speseMensili[m] += parseNum_(r[2]);
     });
   } catch(e) {}
 
@@ -629,7 +649,7 @@ function getSummaryAnno_(params) {
     const entrate = readSheetByName_('Entrate_' + year);
     entrate.forEach(r => {
       const m = new Date(r[1]).getMonth();
-      entrateMensili[m] += parseFloat(r[2]) || 0;
+      entrateMensili[m] += parseNum_(r[2]);
     });
   } catch(e) {}
 
@@ -837,7 +857,7 @@ function updateSaldoConto_(nomeConto, delta) {
   const data  = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][1] === nomeConto) {
-      const current = parseFloat(data[i][8]) || 0;
+      const current = parseNum_(data[i][8]);
       sheet.getRange(i + 1, 9).setValue(current + delta);
       return;
     }
