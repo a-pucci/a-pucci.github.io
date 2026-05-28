@@ -684,7 +684,8 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzZ43n32Z58Gp-EtfSao9BI
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
 let CONTI = [];
-const INV_CAT = 'Investimenti'; // categoria spese da separare dalle spese correnti
+const INV_CAT       = 'Investimenti'; // categoria spese da separare dalle spese correnti
+const GIROCONTO_SUB = 'Giroconto';    // sottocategoria da escludere da tutti i calcoli
 let summaryAnno   = null;
 let trendAnnoInst = null;
 let currentSpese = [];
@@ -967,12 +968,12 @@ async function loadSpese() {
     applyFilters();
 
     // Aggiorna summary mobile
-    const totM = currentSpese.reduce((s,r)=>s+r.importo,0);
+    const totM = currentSpese.filter(r=>r.sottocategoria!==GIROCONTO_SUB).reduce((s,r)=>s+r.importo,0);
     const mobTot = document.getElementById('mobile-tot');
     const mobCount = document.getElementById('mobile-count');
     const mobLbl = document.getElementById('mobile-month-label2');
     if (mobTot) mobTot.textContent = '€' + fmtDec(totM);
-    if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT).length;
+    if (mobCount) mobCount.textContent = currentSpese.filter(e=>e.categoria!==INV_CAT && e.sottocategoria!==GIROCONTO_SUB).length;
     if (mobLbl) mobLbl.textContent = MONTHS_SHORT[currentMonth-1];
   } catch(e) {
     if (!navigator.onLine) return;
@@ -992,8 +993,9 @@ function renderSpeseMetrics() {
   const spese = getFilteredSpese();
   const hasFilter = activeFilters.q || activeFilters.cat ||
                     activeFilters.minAmt !== null || activeFilters.maxAmt !== null;
-  const invSpese = spese.filter(e => e.categoria === INV_CAT);
-  const regSpese = spese.filter(e => e.categoria !== INV_CAT);
+  const speseCalc = spese.filter(e => e.sottocategoria !== GIROCONTO_SUB);
+  const invSpese = speseCalc.filter(e => e.categoria === INV_CAT);
+  const regSpese = speseCalc.filter(e => e.categoria !== INV_CAT);
   const totInv = invSpese.reduce((s,r) => s+r.importo, 0);
   const totReg = regSpese.reduce((s,r) => s+r.importo, 0);
   const totUscite = totReg + totInv;
@@ -1616,8 +1618,8 @@ function changeMonthEntrate(d) {
 
 function renderEntrate() {
   const entrate = currentEntrate;
-  const totE = entrate.reduce((s,r)=>s+r.importo, 0);
-  const totS = currentSpese.filter(e => e.categoria !== INV_CAT).reduce((s,r)=>s+r.importo, 0);
+  const totE = entrate.filter(r=>r.tipo!==GIROCONTO_SUB).reduce((s,r)=>s+r.importo, 0);
+  const totS = currentSpese.filter(e => e.categoria !== INV_CAT && e.sottocategoria !== GIROCONTO_SUB).reduce((s,r)=>s+r.importo, 0);
   const risp = totE - totS;
   const metricsEl = document.getElementById('entrate-metrics');
   if (metricsEl) metricsEl.innerHTML = `
@@ -1674,9 +1676,9 @@ async function addEntrata() {
 }
 
 function renderPanoramica(totInv) {
-  const totSpese   = currentSpese.filter(e => e.categoria !== INV_CAT).reduce((s,r) => s + r.importo, 0);
-  const totUscite  = currentSpese.reduce((s,r) => s + r.importo, 0);
-  const totEntrate = currentEntrate.reduce((s,r) => s + r.importo, 0);
+  const totSpese   = currentSpese.filter(e => e.categoria !== INV_CAT && e.sottocategoria !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
+  const totUscite  = currentSpese.filter(e => e.sottocategoria !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
+  const totEntrate = currentEntrate.filter(r => r.tipo !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
   const risparmio  = totEntrate - totSpese;
   const totConti   = CONTI
     .filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
