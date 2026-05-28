@@ -1,8 +1,8 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbzZ43n32Z58Gp-EtfSao9BIJ4KnZNG8uPfzm5nUM8YSly-SdiKIENkhNDTXKjkZpb7L/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycby2Zogds8EN8_NiH71cupTta0Oym3PruwvcASLSMqnBVHJrZkI5UjNdrXCpDyzuxc--/exec';
 
 const APP_SHELL = [
   '/finanze/',
