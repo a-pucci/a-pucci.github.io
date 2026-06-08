@@ -652,25 +652,13 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Importa Moneyfarm Risparmi</div>
+      <div class="card-title">Inizio mese contabile</div>
       <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.6">
-        Formato atteso: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px">Data,Controvalore,Ammontare investito</code><br>
-        Importa come snapshots investimento — piattaforma: Moneyfarm, conto: Risparmi.
+        Giorno del mese da cui parte il tuo mese contabile. Es: con giorno <strong style="color:var(--muted)">16</strong>, le spese di Aprile vanno dal 16 apr al 15 mag.
       </div>
-      <div class="form-row">
-        <label>File CSV</label>
-        <input type="file" id="mf-csv-file" accept=".csv" onchange="loadMfCsv(this)">
-      </div>
-      <div id="mf-csv-preview" style="display:none;margin-top:12px">
-        <div id="mf-csv-info" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
-        <div style="overflow-x:auto;margin-bottom:12px">
-          <table id="mf-csv-table" style="width:100%;font-size:11px;border-collapse:collapse"></table>
-        </div>
-        <button class="btn-primary" id="mf-csv-btn" onclick="importMfCsv()">
-          <i class="ti ti-upload"></i> <span id="mf-csv-btn-label">Importa</span>
-        </button>
-        <div class="msg ok" id="mf-csv-ok"></div>
-        <div class="msg err" id="mf-csv-err"></div>
+      <div class="form-row" style="max-width:200px">
+        <label>Giorno di inizio (1–28)</label>
+        <input type="number" id="month-start-day" min="1" max="28" value="1" oninput="saveMonthStartDay(this.value)" />
       </div>
     </div>
 
@@ -693,6 +681,7 @@ let activeFilters = { q: '', cat: '', minAmt: null, maxAmt: null };
 let currentEntrate = [];
 let currentMonth = new Date().getMonth() + 1;
 let currentYear  = new Date().getFullYear();
+let monthStartDay = Math.max(1, Math.min(28, parseInt(localStorage.getItem('finanze_monthStartDay') || '1')));
 const MONTHS_FULL = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
                      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -962,9 +951,24 @@ function renderContiList() {
 async function loadSpese() {
   try {
     updateMonthLabel();
-    const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
-    if (!res.ok) throw new Error(res.error);
-    currentSpese = res.data;
+    let rows;
+    if (monthStartDay <= 1) {
+      const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
+      if (!res.ok) throw new Error(res.error);
+      rows = res.data;
+    } else {
+      const rng = getMonthRange(currentYear, currentMonth, monthStartDay);
+      const fromY = rng.from.getFullYear(), fromM = rng.from.getMonth()+1;
+      const toY   = rng.to.getFullYear(),   toM   = rng.to.getMonth()+1;
+      const res1 = await apiGet({action:'getSpese', year:fromY, month:fromM});
+      if (!res1.ok) throw new Error(res1.error);
+      rows = res1.data.filter(r => r.data >= rng.fromISO);
+      if (fromY !== toY || fromM !== toM) {
+        const res2 = await apiGet({action:'getSpese', year:toY, month:toM});
+        if (res2.ok) rows = rows.concat(res2.data.filter(r => r.data <= rng.toISO));
+      }
+    }
+    currentSpese = rows;
     applyFilters();
 
     // Aggiorna summary mobile
@@ -981,8 +985,25 @@ async function loadSpese() {
   }
 }
 
+function getMonthRange(year, month, startDay) {
+  const from = new Date(year, month - 1, startDay);
+  const to   = new Date(year, month, startDay - 1);
+  return {
+    from, to,
+    fromISO: from.toISOString().slice(0,10),
+    toISO:   to.toISOString().slice(0,10)
+  };
+}
+
+function monthRangeLabel(year, month, startDay) {
+  if (startDay <= 1) return MONTHS_FULL[month-1] + ' ' + year;
+  const { from, to } = getMonthRange(year, month, startDay);
+  const fmt = d => d.getDate() + ' ' + MONTHS_SHORT[d.getMonth()];
+  return fmt(from) + ' – ' + fmt(to) + ' ' + to.getFullYear();
+}
+
 function updateMonthLabel() {
-  const lbl = MONTHS_FULL[currentMonth-1] + ' ' + currentYear;
+  const lbl = monthRangeLabel(currentYear, currentMonth, monthStartDay);
   const mlEl = document.getElementById('month-label');
   const vcEl = document.getElementById('view-cat-month');
   if (mlEl) mlEl.textContent = lbl;
@@ -1412,20 +1433,24 @@ function selectQConto(nome, btn) {
 function buildPiattButtons() {
   const wrap = document.getElementById('piatt-buttons');
   if (!wrap) return;
-  const piattaforme = (CONTI||[]).filter(c => c.tipo === 'Investimento').map(c => c.nome);
-  if (!piattaforme.length) {
+  const investimenti = (CONTI||[]).filter(c => c.tipo === 'Investimento').map(c => c.nome);
+  const pensione     = (CONTI||[]).filter(c => c.tipo === 'Piano pensione').map(c => c.nome);
+  const tutte = [...investimenti, ...pensione];
+  if (!tutte.length) {
     wrap.innerHTML = '<div class="empty" style="font-size:12px">Aggiungi conti investimento nelle Impostazioni</div>';
     return;
   }
   const prevSel = selectedPiatt;
-  wrap.innerHTML = piattaforme.map(p => `
-    <button onclick="selectPiatt('${p}', this)"
-      style="padding:8px 16px;border-radius:var(--radius-sm);border:1px solid var(--border2);
-             background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s">
-      ${p}
-    </button>`).join('');
-  // Auto-select previous or first
-  const toSelect = prevSel && piattaforme.includes(prevSel) ? prevSel : piattaforme[0];
+  const mkBtn = p => `<button onclick="selectPiatt('${p}', this)"
+    style="padding:8px 16px;border-radius:var(--radius-sm);border:1px solid var(--border2);
+           background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s">${p}</button>`;
+  let html = investimenti.map(mkBtn).join('');
+  if (pensione.length) {
+    if (investimenti.length) html += '<span style="width:1px;background:var(--border2);align-self:stretch;margin:0 4px;display:inline-block"></span>';
+    html += pensione.map(mkBtn).join('');
+  }
+  wrap.innerHTML = html;
+  const toSelect = prevSel && tutte.includes(prevSel) ? prevSel : tutte[0];
   const btn = [...wrap.querySelectorAll('button')].find(b => b.textContent.trim() === toSelect);
   if (btn) selectPiatt(toSelect, btn);
 }
@@ -1606,7 +1631,7 @@ let currentEntrateMonth = new Date().getMonth() + 1;
 let currentEntrateYear  = new Date().getFullYear();
 
 function updateEntratMonthLabel() {
-  const lbl = MONTHS_FULL[currentEntrateMonth-1] + ' ' + currentEntrateYear;
+  const lbl = monthRangeLabel(currentEntrateYear, currentEntrateMonth, monthStartDay);
   const el = document.getElementById('entrate-month-label');
   if (el) el.textContent = lbl;
 }
@@ -1639,9 +1664,24 @@ function renderEntrate() {
 async function loadEntrate() {
   try {
     updateEntratMonthLabel();
-    const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
-    if (!res.ok) return;
-    currentEntrate = res.data;
+    let rows;
+    if (monthStartDay <= 1) {
+      const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
+      if (!res.ok) return;
+      rows = res.data;
+    } else {
+      const rng = getMonthRange(currentEntrateYear, currentEntrateMonth, monthStartDay);
+      const fromY = rng.from.getFullYear(), fromM = rng.from.getMonth()+1;
+      const toY   = rng.to.getFullYear(),   toM   = rng.to.getMonth()+1;
+      const res1 = await apiGet({action:'getEntrate', year:fromY, month:fromM});
+      if (!res1.ok) return;
+      rows = res1.data.filter(r => r.data >= rng.fromISO);
+      if (fromY !== toY || fromM !== toM) {
+        const res2 = await apiGet({action:'getEntrate', year:toY, month:toM});
+        if (res2.ok) rows = rows.concat(res2.data.filter(r => r.data <= rng.toISO));
+      }
+    }
+    currentEntrate = rows;
     renderEntrate();
   } catch(e) {
     if (!navigator.onLine) return;
@@ -1982,7 +2022,6 @@ function fmtDec(n) {
 
 // ── CSV IMPORTER ─────────────────────────────────────────────
 let speseCsvRows = [];
-let mfCsvRows    = [];
 
 function parseCSV(text) {
   return text.trim().split('\n').map(line => {
@@ -2061,64 +2100,19 @@ async function importSpeseCsv() {
   }
 }
 
-function loadMfCsv(input) {
-  const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const parsed = parseCSV(e.target.result);
-    const header = parsed[0];
-    mfCsvRows = parsed.slice(1).filter(r => r.length >= 3 && r[0]);
-    const byYear = {};
-    mfCsvRows.forEach(r => { const y = (r[0]||'').slice(0,4); byYear[y] = (byYear[y]||0)+1; });
-    const yearSummary = Object.entries(byYear).sort().map(([y,n])=>`${y}: ${n}`).join(' · ');
-    const infoEl = document.getElementById('mf-csv-info');
-    if (infoEl) infoEl.textContent = `${mfCsvRows.length} snapshot — ${yearSummary}`;
-    const lbl = document.getElementById('mf-csv-btn-label');
-    if (lbl) lbl.textContent = `Importa ${mfCsvRows.length} snapshot`;
-    renderImportTable('mf-csv-table', header, mfCsvRows);
-    const prev = document.getElementById('mf-csv-preview'); if (prev) prev.style.display = '';
-  };
-  reader.readAsText(file, 'utf-8');
-}
-
-async function importMfCsv() {
-  if (!mfCsvRows.length) return;
-  const btn = document.getElementById('mf-csv-btn');
-  const lbl = document.getElementById('mf-csv-btn-label');
-  if (btn) btn.disabled = true;
-  if (lbl) lbl.textContent = 'Importando…';
-
-  const rows = mfCsvRows.map(r => {
-    const valore = parseFloat(r[1]) || 0;
-    const investito = parseFloat(r[2]) || 0;
-    return {
-      data: r[0], valore, investito,
-      rendimentoEur: parseFloat((valore - investito).toFixed(2)),
-      rendimentoPct: investito > 0 ? parseFloat(((valore - investito) / investito * 100).toFixed(2)) : 0,
-    };
-  });
-
-  try {
-    const res = await apiPost({ action: 'bulkImportInvestimenti', rows, piattaforma: 'Moneyfarm', conto: 'Risparmi', strumento: '' });
-    if (!res.ok) throw new Error(res.error || 'Errore import');
-    const okEl = document.getElementById('mf-csv-ok');
-    if (okEl) { okEl.textContent = `✓ Importati ${res.imported} snapshot`; okEl.style.display = 'block'; }
-    mfCsvRows = [];
-    const fi = document.getElementById('mf-csv-file'); if (fi) fi.value = '';
-    const prev = document.getElementById('mf-csv-preview'); if (prev) prev.style.display = 'none';
-  } catch(err) {
-    showMsg('mf-csv-err', err.message);
-  } finally {
-    if (btn) btn.disabled = false;
-    if (lbl) lbl.textContent = 'Importa';
-  }
-}
-
 function togglePrivate() {
   const on = document.body.classList.toggle('private-mode');
   const icon = document.getElementById('privacy-icon');
   if (icon) icon.className = on ? 'ti ti-eye-off' : 'ti ti-eye';
   localStorage.setItem('privateMode', on ? '1' : '0');
+}
+
+function saveMonthStartDay(val) {
+  const d = Math.max(1, Math.min(28, parseInt(val) || 1));
+  monthStartDay = d;
+  localStorage.setItem('finanze_monthStartDay', d);
+  loadSpese();
+  loadEntrate();
 }
 
 // Auto-start
@@ -2154,6 +2148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateEntratMonthLabel();
   ['inv-data','e-date','q-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=todayISO; });
   const urlBox = document.getElementById('api-url-display'); if (urlBox) urlBox.textContent = API_URL;
+  const msdEl = document.getElementById('month-start-day'); if (msdEl) msdEl.value = monthStartDay;
 
   // Su mobile apri direttamente tab spese
   if (window.innerWidth <= 600) {

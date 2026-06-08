@@ -110,6 +110,7 @@ let currentSpese = [];   // spese del mese corrente (include categoria INV_CAT)
 let currentEntrate = []; // entrate del mese corrente
 let currentMonth = ...;  // mese corrente (1-12)
 let currentYear = ...;   // anno corrente
+let monthStartDay = ...; // giorno di inizio mese contabile (1-28, default 1, persiste in localStorage 'finanze_monthStartDay')
 let budgetData = [];     // dati budget anno corrente
 let budgetMonth = ...;
 let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
@@ -131,10 +132,13 @@ let lastInvByPiatt = {}; // ultimo snapshot per piattaforma { piattaforma: { val
 - `renderPatrimonioChart(data)` — line chart andamento patrimonio totale (tab Panoramica), punti aggregati per settimana
 - `renderTrendAnnoChart()` — line chart entrate vs spese mensili (tab Panoramica)
 - `renderDonutChart()` — donut allocazione piattaforme (tab Panoramica)
-- `buildPiattButtons()` — bottoni selezione piattaforma nel form snapshot investimenti (da CONTI tipo Investimento)
+- `buildPiattButtons()` — bottoni selezione piattaforma nel form snapshot investimenti (da CONTI tipo Investimento + tipo Piano pensione, separati da divisore visivo)
 - `selectPiatt(p, btn)` — seleziona piattaforma investimento e aggiorna stile bottoni
 - `buildQContoButtons()` — bottoni selezione conto nel form aggiungi spesa (solo CONTI tipo 'Conto corrente'), preseleziona Trade Republic
 - `selectQConto(nome, btn)` — seleziona conto e aggiorna stile bottoni
+- `getMonthRange(year, month, startDay)` — calcola `{ from, to, fromISO, toISO }` per mese contabile con startDay > 1
+- `monthRangeLabel(year, month, startDay)` — label mese: "Aprile 2026" se startDay=1, "16 apr – 15 mag 2026" altrimenti
+- `saveMonthStartDay(val)` — aggiorna `monthStartDay`, persiste in localStorage, ricarica spese+entrate
 - `addSpesa()` / `addEntrata()` / `addInvestimento()` / `saveBudget()`
 - `addCategoria()` / `addConto()`
 - `openEditMovimento()` / `saveEditMovimento()` — modal modifica spese/entrate
@@ -184,7 +188,7 @@ Tutti i valori monetari usano `fmtDec(n)` (formato it-IT con 2 decimali).
 3. **Investimenti** — snapshot rapido per piattaforma (bottoni) + grafico andamento per piattaforma (settimanale) + metriche con Totale contributi e Totale
 4. **Budget** — budget vs reale per mese + form modifica budget
 5. **Entrate** — form aggiunta entrata + lista movimenti + metriche (entrate, spese senza inv, risparmio)
-6. **Impostazioni** — aggiungi categoria/sottocategoria/conto, URL script, importa Moneyfarm Risparmi da CSV
+6. **Impostazioni** — aggiungi categoria/sottocategoria/conto, URL script, giorno inizio mese contabile (1–28), importa Moneyfarm Risparmi da CSV
 
 ### CSS Variables (tema dark)
 ```css
