@@ -679,9 +679,13 @@ let trendAnnoInst = null;
 let currentSpese = [];
 let activeFilters = { q: '', cat: '', minAmt: null, maxAmt: null };
 let currentEntrate = [];
+let monthStartDay = Math.max(1, Math.min(28, parseInt(localStorage.getItem('finanze_monthStartDay') || '1')));
 let currentMonth = new Date().getMonth() + 1;
 let currentYear  = new Date().getFullYear();
-let monthStartDay = Math.max(1, Math.min(28, parseInt(localStorage.getItem('finanze_monthStartDay') || '1')));
+// Se oggi < startDay siamo ancora nel mese fiscale precedente
+if (monthStartDay > 1 && new Date().getDate() < monthStartDay) {
+  currentMonth--; if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+}
 const MONTHS_FULL = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
                      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -785,7 +789,7 @@ async function reloadAll() {
     await Promise.all([loadCategorie(), loadConti(), loadSummaryAnno()]);
     console.log('categorie e conti OK');
     await loadSpese();
-    currentEntrateMonth = currentMonth; // mantieni i due mesi in sincronia
+    currentEntrateMonth = currentMonth; currentEntrateYear = currentYear; // mantieni in sincronia
     await loadEntrate();
     console.log('spese e entrate OK');
     await loadInvestimenti();
@@ -1627,8 +1631,8 @@ async function addSpesa() {
 // ── UI HELPERS ───────────────────────────────────────────────
 
 // ── ENTRATE ──────────────────────────────────────────────────
-let currentEntrateMonth = new Date().getMonth() + 1;
-let currentEntrateYear  = new Date().getFullYear();
+let currentEntrateMonth = currentMonth;
+let currentEntrateYear  = currentYear;
 
 function updateEntratMonthLabel() {
   const lbl = monthRangeLabel(currentEntrateYear, currentEntrateMonth, monthStartDay);

@@ -108,9 +108,9 @@ let CATS = {};           // categorie da Sheets { NomeCat: { color, icon, subs: 
 let CONTI = [];          // conti da Sheets
 let currentSpese = [];   // spese del mese corrente (include categoria INV_CAT)
 let currentEntrate = []; // entrate del mese corrente
-let currentMonth = ...;  // mese corrente (1-12)
-let currentYear = ...;   // anno corrente
-let monthStartDay = ...; // giorno di inizio mese contabile (1-28, default 1, persiste in localStorage 'finanze_monthStartDay')
+let monthStartDay = ...; // giorno di inizio mese contabile (1-28, default 1, persiste in localStorage 'finanze_monthStartDay') — dichiarato PRIMA di currentMonth/Year
+let currentMonth = ...;  // mese fiscale corrente (1-12): se oggi < monthStartDay, vale il mese precedente
+let currentYear = ...;   // anno fiscale corrente (aggiustato con currentMonth)
 let budgetData = [];     // dati budget anno corrente
 let budgetMonth = ...;
 let selectedPiatt = '';  // piattaforma selezionata nel form investimenti
@@ -136,7 +136,7 @@ let lastInvByPiatt = {}; // ultimo snapshot per piattaforma { piattaforma: { val
 - `selectPiatt(p, btn)` — seleziona piattaforma investimento e aggiorna stile bottoni
 - `buildQContoButtons()` — bottoni selezione conto nel form aggiungi spesa (solo CONTI tipo 'Conto corrente'), preseleziona Trade Republic
 - `selectQConto(nome, btn)` — seleziona conto e aggiorna stile bottoni
-- `getMonthRange(year, month, startDay)` — calcola `{ from, to, fromISO, toISO }` per mese contabile con startDay > 1
+- `getMonthRange(year, month, startDay)` — calcola `{ from, to, fromISO, toISO }` per mese contabile con startDay > 1; NB: `month` è il mese "etichetta" (quello del giorno startDay), non il secondo mese del range
 - `monthRangeLabel(year, month, startDay)` — label mese: "Aprile 2026" se startDay=1, "16 apr – 15 mag 2026" altrimenti
 - `saveMonthStartDay(val)` — aggiorna `monthStartDay`, persiste in localStorage, ricarica spese+entrate
 - `addSpesa()` / `addEntrata()` / `addInvestimento()` / `saveBudget()`
