@@ -451,6 +451,7 @@
         <span class="euro">€</span>
         <input type="number" id="q-amount" placeholder="0,00" step="0.01" inputmode="decimal" />
       </div>
+      <div id="q-recenti" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
       <div class="selects-row">
         <select id="q-cat" onchange="updateSubcats()"><option value="">Categoria...</option></select>
         <select id="q-subcat"><option value="">Sottocategoria...</option></select>
@@ -988,6 +989,8 @@ function buildCatSelects() {
     });
     if (prev) qc.value = prev;
   }
+
+  renderRecenti();   // dipende da CATS: le combo con categorie sparite vanno nascoste
 
   // new-cat-sel
   const nc = document.getElementById('new-cat-sel');
@@ -1625,6 +1628,70 @@ function selectQConto(nome, btn) {
   btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--text)'; btn.style.borderColor = 'var(--border2)';
 }
 
+// ── COMBINAZIONI RECENTI ─────────────────────────────────────
+// Inserire una spesa richiedeva cinque interazioni: importo, categoria,
+// sottocategoria, conto, salva. Un chip ne precompila tre in un tap.
+const _RECENTI_KEY = 'finanze_combo_recenti';
+const _RECENTI_MAX = 5;
+let _recentiVisibili = [];
+
+const _escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const _chiaveCombo = c => c.cat + '|' + c.sub + '|' + c.conto;
+
+function leggiRecenti() {
+  try {
+    const lista = JSON.parse(localStorage.getItem(_RECENTI_KEY) || '[]');
+    return Array.isArray(lista) ? lista.filter(c => c && c.cat) : [];
+  } catch { return []; }
+}
+
+function registraRecente(cat, sub, conto) {
+  if (!cat) return;
+  const combo = { cat, sub: sub || '', conto: conto || '' };
+  const lista = [combo, ...leggiRecenti().filter(c => _chiaveCombo(c) !== _chiaveCombo(combo))]
+    .slice(0, _RECENTI_MAX);
+  try { localStorage.setItem(_RECENTI_KEY, JSON.stringify(lista)); } catch(e) {}
+  renderRecenti();
+}
+
+function renderRecenti() {
+  const wrap = document.getElementById('q-recenti');
+  if (!wrap) return;
+  // Categorie e conti possono sparire da Sheets dopo l'uso. Si mostrano solo le
+  // combinazioni interamente riapplicabili: un chip col conto non piu' esistente
+  // lascerebbe selezionato il conto precedente, e la spesa finirebbe sul conto
+  // sbagliato senza alcun segnale.
+  const contiDisponibili = CONTI.filter(c => c.tipo === 'Conto corrente').map(c => c.nome);
+  _recentiVisibili = leggiRecenti().filter(c =>
+    CATS[c.cat] && (!c.conto || contiDisponibili.indexOf(c.conto) !== -1));
+  if (!_recentiVisibili.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+  wrap.innerHTML = _recentiVisibili.map((c, i) => {
+    const icona = CATS[c.cat] && CATS[c.cat].icon ? CATS[c.cat].icon + ' ' : '';
+    const titolo = [c.cat, c.sub, c.conto].filter(Boolean).join(' · ');
+    return `<button type="button" onclick="applicaRecente(${i})" title="${_escAttr(titolo)}"
+      style="padding:5px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);
+             background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer;
+             white-space:nowrap">${icona}${_escAttr(c.sub || c.cat)}</button>`;
+  }).join('');
+}
+
+function applicaRecente(i) {
+  const c = _recentiVisibili[i];
+  if (!c) return;
+  const qc = document.getElementById('q-cat');
+  if (qc) { qc.value = c.cat; updateSubcats(); }
+  const qs = document.getElementById('q-subcat');
+  if (qs && c.sub) qs.value = c.sub;
+  if (c.conto) {
+    const btn = [...document.querySelectorAll('#q-conto-wrap button')]
+      .find(b => b.textContent.trim() === c.conto);
+    if (btn) selectQConto(c.conto, btn);
+  }
+  const amt = document.getElementById('q-amount');
+  if (amt) amt.focus();
+}
+
 function buildPiattButtons() {
   const wrap = document.getElementById('piatt-buttons');
   if (!wrap) return;
@@ -1787,6 +1854,8 @@ async function addSpesa() {
       metodo: ''
     });
     if (res.ok) {
+      // Anche una spesa accodata offline e' un uso reale della combinazione.
+      registraRecente(cat, sub, conto);
       if (res.queued) {
         if (btn) {
           btn.style.background = 'var(--amber)';
@@ -2197,6 +2266,12 @@ function showTab(id, btn) {
   document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   btn.classList.add('active');
+  // Focus sull'importo solo da desktop: su mobile la tab Spese è anche la vista
+  // di consultazione, e far comparire la tastiera a ogni ingresso è invadente.
+  if (id === 'spese' && window.innerWidth > 600) {
+    const amt = document.getElementById('q-amount');
+    if (amt) amt.focus();
+  }
 }
 
 // Sposta un periodo di d mesi gestendo il passaggio d'anno.
@@ -2357,6 +2432,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (icon) icon.className = 'ti ti-eye-off';
   }
   updateEntratMonthLabel();
+  renderRecenti();
+  // Invio salva: su mobile la tastiera copre il pulsante, da desktop evita il giro
+  // col mouse. Solo dai campi di testo, non dalle select dove Invio ha altro senso.
+  [['q-amount', addSpesa], ['q-note', addSpesa], ['e-amount', addEntrata]].forEach(([id, azione]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); azione(); } });
+  });
   ['inv-data','e-date','q-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=todayISO; });
   const urlBox = document.getElementById('api-url-display'); if (urlBox) urlBox.textContent = API_URL;
   const msdEl = document.getElementById('month-start-day'); if (msdEl) msdEl.value = monthStartDay;
