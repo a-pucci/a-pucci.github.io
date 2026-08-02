@@ -273,6 +273,26 @@
   .btn-secondary:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
 
   /* ── MESSAGES ── */
+  /* Notifiche ancorate in basso: i messaggi dentro le card finivano fuori schermo
+     su mobile, e l'azione di annullamento deve restare raggiungibile col pollice. */
+  #toast-wrap { position: fixed; left: 0; right: 0; z-index: 1000;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    display: flex; flex-direction: column-reverse; align-items: center; gap: 8px;
+    padding: 0 12px; pointer-events: none; }
+  .toast { pointer-events: auto; display: flex; align-items: center; gap: 10px;
+    width: 100%; max-width: 420px; background: var(--surface2);
+    border: 1px solid var(--border2); border-radius: var(--radius-sm);
+    padding: 10px 12px; font-size: 13px; color: var(--text);
+    box-shadow: 0 6px 20px rgba(0,0,0,.45); animation: toast-in .18s ease-out; }
+  .toast-testo { flex: 1; line-height: 1.35; }
+  .toast--err .toast-testo { color: var(--red); }
+  .toast--ok  .toast-testo { color: var(--green); }
+  .toast-azione { background: none; border: none; color: var(--accent);
+    font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+    padding: 8px 10px; min-height: 44px; white-space: nowrap; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
   .msg { border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; margin-top: 8px; display: none; }
   .msg.ok  { background: var(--green-bg); color: var(--green); }
   .msg.err { background: var(--red-bg);   color: var(--red); }
@@ -1379,25 +1399,70 @@ function renderTxList() {
   }).join('');
 }
 
+// Il rischio reale non e' l'eliminazione intenzionale ma quella accidentale, e da
+// un dialogo di conferma ci si difende male: si tocca "OK" per riflesso. Qui si
+// elimina subito e si lascia l'annullamento a portata di pollice.
+function _renderDopoMutazione(sheetKey) {
+  if (sheetKey === 'spese') applyFilters();
+  renderEntrate();   // il risparmio dipende da entrambi i dataset
+}
+
 async function deleteMovimento(sheetKey, id, year) {
-  if (!confirm('Eliminare questo movimento?')) return;
+  const lista = sheetKey === 'spese' ? currentSpese : currentEntrate;
+  const idx = lista.findIndex(r => String(r.id) === String(id));
+  if (idx === -1) return;
+  const riga = lista[idx];
+
+  lista.splice(idx, 1);
+  _renderDopoMutazione(sheetKey);
+
   try {
     const res = await apiPost({ action: 'deleteRow', sheetKey, id, year });
-    if (res.ok) {
-      if (sheetKey === 'spese') {
-        currentSpese = currentSpese.filter(r => String(r.id) !== String(id));
-        applyFilters();
-        renderEntrate();
-      } else if (sheetKey === 'entrate') {
-        currentEntrate = currentEntrate.filter(r => String(r.id) !== String(id));
-        renderEntrate();
-      }
-    } else {
-      alert('Errore: ' + (res.error || 'impossibile eliminare'));
-    }
+    if (!res.ok) throw new Error(res.error || 'impossibile eliminare');
   } catch(err) {
-    alert('Errore di rete');
+    lista.splice(idx, 0, riga);   // fallita: la riga torna dov'era
+    _renderDopoMutazione(sheetKey);
+    toast('Eliminazione non riuscita: ' + err.message, { tipo: 'err', durata: 6000 });
+    return;
   }
+
+  toast(sheetKey === 'spese' ? 'Spesa eliminata' : 'Entrata eliminata', {
+    azione: 'Annulla',
+    durata: 6000,
+    onAzione: () => ripristinaMovimento(sheetKey, riga)
+  });
+}
+
+// Il ripristino reinserisce la riga: l'ID assegnato dal foglio sara' nuovo, quindi
+// si ricarica il periodo invece di indovinarlo. Passa da apiPost, che accoda le
+// aggiunte quando si e' offline.
+async function ripristinaMovimento(sheetKey, riga) {
+  const year = String(riga.data || '').slice(0, 4) || String(currentYear);
+  const body = sheetKey === 'spese'
+    ? { action: 'addSpesa', importo: riga.importo, categoria: riga.categoria,
+        sottocategoria: riga.sottocategoria || '', nota: riga.nota || '',
+        data: riga.data, year, conto: riga.conto || '', metodo: riga.metodo || '' }
+    : { action: 'addEntrata', importo: riga.importo, tipo: riga.tipo,
+        conto: riga.conto || '', nota: riga.nota || '', data: riga.data, year };
+  try {
+    const res = await apiPost(body);
+    if (!res.ok) throw new Error(res.error || 'ripristino non riuscito');
+    if (res.queued) {
+      ripristinaInVista(sheetKey, riga);
+      toast('Ripristino in coda — sarà applicato quando torni online', { tipo: 'ok' });
+      return;
+    }
+    await loadPeriodo();
+    toast('Movimento ripristinato', { tipo: 'ok' });
+  } catch(err) {
+    toast('Ripristino non riuscito: ' + err.message, { tipo: 'err', durata: 8000 });
+  }
+}
+
+// Offline il foglio non risponde: la riga torna almeno in vista, con l'ID vecchio.
+function ripristinaInVista(sheetKey, riga) {
+  (sheetKey === 'spese' ? currentSpese : currentEntrate).push(riga);
+  _renderDopoMutazione(sheetKey);
 }
 
 // ── MODIFICA MOVIMENTI ───────────────────────────────────────
@@ -2292,12 +2357,47 @@ function setView(v, btn) {
     document.getElementById('view-'+n).style.display = n===v?'block':'none');
 }
 
+// ── NOTIFICHE ────────────────────────────────────────────────
+/**
+ * Mostra una notifica in basso. Con `azione` aggiunge un pulsante che la chiude
+ * ed esegue `onAzione`. Restituisce un handle per chiuderla prima della scadenza.
+ */
+function toast(testo, opzioni) {
+  const { azione, onAzione, durata = 4000, tipo = 'info' } = opzioni || {};
+  const wrap = document.getElementById('toast-wrap');
+  if (!wrap) return { chiudi() {} };
+
+  const el = document.createElement('div');
+  el.className = 'toast toast--' + tipo;
+  const span = document.createElement('span');
+  span.className = 'toast-testo';
+  span.textContent = testo;          // testo, non HTML: i messaggi possono contenere dati
+  el.appendChild(span);
+
+  let chiuso = false;
+  const rimuovi = () => { if (!chiuso) { chiuso = true; el.remove(); } };
+
+  if (azione) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-azione';
+    btn.type = 'button';
+    btn.textContent = azione;
+    btn.addEventListener('click', () => { clearTimeout(timer); rimuovi(); if (onAzione) onAzione(); });
+    el.appendChild(btn);
+  }
+
+  wrap.appendChild(el);
+  const timer = setTimeout(rimuovi, durata);
+  return { chiudi() { clearTimeout(timer); rimuovi(); } };
+}
+
+// I messaggi vivevano dentro le card, spesso fuori schermo su mobile. La firma
+// resta identica per non toccare i punti di chiamata: cambia solo dove appaiono.
 function showMsg(id, txt) {
   const el = document.getElementById(id);
-  if (!el) return;
-  if (txt) el.textContent = txt;
-  el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 4000);
+  const testo = txt || (el ? el.textContent.trim() : '');
+  if (!testo) return;
+  toast(testo, { tipo: /-err$/.test(id) ? 'err' : 'ok' });
 }
 
 function fmt(n) {
@@ -2508,5 +2608,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 </script>
+<div id="toast-wrap"></div>
 </body>
 </html>
