@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
 
@@ -68,6 +68,19 @@ self.addEventListener('sync', event => {
   }
 });
 
+// Apps Script risponde sempre JSON, ma l'infrastruttura Google può interporre una
+// pagina HTML (throttling, errore temporaneo). Con r.json() diretto l'eccezione è
+// indistinguibile da un guasto di rete; qui si riconosce e non si consuma l'operazione.
+async function postJson(body) {
+  const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
+  const txt = await r.text();
+  try {
+    return JSON.parse(txt);
+  } catch {
+    throw new Error('risposta non JSON: ' + txt.slice(0, 120));
+  }
+}
+
 async function syncPendingOps() {
   const ops = await getAllPendingOps();
   if (ops.length === 0) return;
@@ -75,8 +88,7 @@ async function syncPendingOps() {
   let hasError = false;
   for (const op of ops) {
     try {
-      const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
-      const res = await r.json();
+      const res = await postJson(op.body);
       if (res.ok) {
         await deletePendingOp(op.id);
       } else {

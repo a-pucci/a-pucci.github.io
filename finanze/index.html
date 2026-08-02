@@ -383,6 +383,7 @@
     <div class="status-pill">
       <div class="dot loading" id="sdot"></div>
       <span id="stxt">connessione...</span>
+      <button id="retry-btn" onclick="reloadAll()" style="display:none;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);cursor:pointer;font-size:0.72rem;padding:2px 8px;margin-left:6px">Riprova</button>
       <button onclick="reloadAll()" style="background:none;border:none;cursor:pointer;color:var(--muted);margin-left:4px;font-size:14px;padding:0" title="Ricarica"><i class="ti ti-refresh"></i></button>
       <button class="privacy-btn" onclick="togglePrivate()" id="privacy-btn" title="Modalità privata"><i class="ti ti-eye" id="privacy-icon"></i></button>
     </div>
@@ -682,6 +683,9 @@ let currentEntrate = [];
 let monthStartDay = Math.max(1, Math.min(28, parseInt(localStorage.getItem('finanze_monthStartDay') || '1')));
 let currentMonth = new Date().getMonth() + 1;
 let currentYear  = new Date().getFullYear();
+// Anno solare reale: currentYear segue la navigazione mesi e può finire su un anno
+// passato, ma patrimonio e trend annuale devono restare ancorati a oggi.
+const THIS_YEAR  = new Date().getFullYear();
 // Se oggi < startDay siamo ancora nel mese fiscale precedente
 if (monthStartDay > 1 && new Date().getDate() < monthStartDay) {
   currentMonth--; if (currentMonth < 1) { currentMonth = 12; currentYear--; }
@@ -690,7 +694,15 @@ const MONTHS_FULL = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
                      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 
-const todayISO = new Date().toISOString().slice(0,10);
+// Data locale in formato ISO. NB: toISOString() converte prima in UTC e in Italia
+// (UTC+1/+2) fa slittare la mezzanotte locale al giorno precedente.
+function localISO(d) {
+  return d.getFullYear() + '-' +
+         String(d.getMonth() + 1).padStart(2, '0') + '-' +
+         String(d.getDate()).padStart(2, '0');
+}
+
+const todayISO = localISO(new Date());
 
 // ── INDEXEDDB — coda operazioni offline ───────────────────────
 const _DB_NAME = 'finanze-db';
@@ -741,20 +753,48 @@ async function _flushPendingOps() {
   if (ops.length === 0) return;
   for (const op of ops) {
     try {
-      const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
-      const res = await r.json();
+      const res = await _fetchJson(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
       if (res.ok) await _deletePendingOp(op.id);
-    } catch { /* riprova alla prossima apertura */ }
+    } catch { /* operazione non consumata: riprova alla prossima apertura */ }
   }
   const remaining = await _getAllPendingOps();
   if (remaining.length === 0) _showSyncBanner();
 }
 
 // ── API ──────────────────────────────────────────────────────
+// Apps Script risponde sempre JSON, ma l'infrastruttura Google può interporre una
+// pagina HTML (throttling, errore temporaneo, schermata di accesso). Passare quel
+// corpo a r.json() produce "Unexpected token '<', \"<!DOCTYPE \"...".
+// Qui si legge come testo, si tenta il parse e si ritenta con backoff: è una
+// condizione transitoria, non un errore dei dati.
+const _RETRY_MAX     = 2;    // tentativi aggiuntivi dopo il primo
+const _RETRY_BASE_MS = 400;
+const _ERR_UPSTREAM  = 'risposta non valida dal server';
+const _ERR_RETE      = 'nessuna risposta dal server';
+
+async function _fetchJson(url, opts) {
+  let lastErr;
+  for (let attempt = 0; ; attempt++) {
+    let body = null;
+    try {
+      const r = await fetch(url, opts);
+      body = await r.text();
+      return JSON.parse(body);
+    } catch (err) {
+      // Il messaggio del parser ("Unexpected token '<'...") non è utile a chi usa
+      // l'app: si logga per la diagnosi e si espone una causa comprensibile.
+      if (body !== null) console.warn('risposta non JSON:', body.slice(0, 120));
+      lastErr = new Error(body === null ? _ERR_RETE : _ERR_UPSTREAM);
+      // Offline: inutile insistere, il chiamante ha già la sua gestione.
+      if (!navigator.onLine || attempt >= _RETRY_MAX) throw lastErr;
+      await new Promise(res => setTimeout(res, _RETRY_BASE_MS * Math.pow(2, attempt)));
+    }
+  }
+}
+
 async function apiGet(params) {
   const qs = new URLSearchParams(params).toString();
-  const r  = await fetch(API_URL + '?' + qs);
-  return r.json();
+  return _fetchJson(API_URL + '?' + qs);
 }
 const _QUEUEABLE = new Set(['addSpesa', 'addEntrata', 'addInvestimento']);
 
@@ -767,14 +807,15 @@ async function apiPost(body) {
     }
     return { ok: true, queued: true };
   }
-  const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
-  return r.json();
+  return _fetchJson(API_URL, { method: 'POST', body: JSON.stringify(body) });
 }
 
 // ── STATUS ───────────────────────────────────────────────────
 function setStatus(state, text) {
   const dot  = document.getElementById('sdot');
   const stxt = document.getElementById('stxt');
+  const retry = document.getElementById('retry-btn');
+  if (retry) retry.style.display = state === 'err' ? '' : 'none';
   if (!dot) return;
   dot.className = 'dot ' + (state==='ok'?'':'loading');
   if (state==='err') dot.style.background='var(--red)';
@@ -788,16 +829,14 @@ async function reloadAll() {
   try {
     await Promise.all([loadCategorie(), loadConti(), loadSummaryAnno()]);
     console.log('categorie e conti OK');
-    await loadSpese();
-    currentEntrateMonth = currentMonth; currentEntrateYear = currentYear; // mantieni in sincronia
-    await loadEntrate();
+    await loadPeriodo();
     console.log('spese e entrate OK');
     await loadInvestimenti();
     console.log('investimenti OK');
     setStatus('ok','sincronizzato');
   } catch(e) {
     console.error('reloadAll error:', e);
-    setStatus('err','errore: ' + e.message);
+    setStatus('err', e.message);
   }
 }
 
@@ -895,7 +934,7 @@ async function loadConti() {
 
 async function loadSummaryAnno() {
   try {
-    const res = await apiGet({ action: 'getSummaryAnno', year: currentYear });
+    const res = await apiGet({ action: 'getSummaryAnno', year: THIS_YEAR });
     if (res.ok) {
       summaryAnno = res.data;
       renderTrendAnnoChart();
@@ -952,6 +991,13 @@ function renderContiList() {
 }
 
 // ── SPESE ────────────────────────────────────────────────────
+// Carica spese ed entrate dello stesso periodo. Entrambe rieseguono renderEntrate()
+// al termine, quindi l'ultima a finire rende con i due dataset già aggiornati,
+// qualunque sia l'ordine di arrivo.
+async function loadPeriodo() {
+  await Promise.all([loadSpese(), loadEntrate()]);
+}
+
 async function loadSpese() {
   try {
     updateMonthLabel();
@@ -974,6 +1020,9 @@ async function loadSpese() {
     }
     currentSpese = rows;
     applyFilters();
+    // Le metriche della tab Entrate derivano anche dalle spese: vanno rifatte
+    // a ogni cambio di currentSpese, non solo quando cambiano le entrate.
+    renderEntrate();
 
     // Aggiorna summary mobile
     const totM = currentSpese.filter(r=>r.sottocategoria!==GIROCONTO_SUB).reduce((s,r)=>s+r.importo,0);
@@ -994,8 +1043,8 @@ function getMonthRange(year, month, startDay) {
   const to   = new Date(year, month, startDay - 1);
   return {
     from, to,
-    fromISO: from.toISOString().slice(0,10),
-    toISO:   to.toISOString().slice(0,10)
+    fromISO: localISO(from),
+    toISO:   localISO(to)
   };
 }
 
@@ -1208,6 +1257,7 @@ async function deleteMovimento(sheetKey, id, year) {
       if (sheetKey === 'spese') {
         currentSpese = currentSpese.filter(r => String(r.id) !== String(id));
         applyFilters();
+        renderEntrate();
       } else if (sheetKey === 'entrate') {
         currentEntrate = currentEntrate.filter(r => String(r.id) !== String(id));
         renderEntrate();
@@ -1336,13 +1386,19 @@ async function saveEditMovimento() {
 async function loadInvestimenti() {
   try {
     buildPiattButtons();
-    const res = await apiGet({action:'getInvestimenti', year:currentYear});
+    // Anche l'anno precedente: una piattaforma il cui ultimo snapshot è di dicembre
+    // deve continuare a contare nel patrimonio a gennaio.
+    const [res, resPrev] = await Promise.all([
+      apiGet({action:'getInvestimenti', year:THIS_YEAR}),
+      apiGet({action:'getInvestimenti', year:THIS_YEAR - 1})
+    ]);
     if (!res.ok) return;
-    const data = res.data;
+    const data     = res.data;
+    const prevData = resPrev.ok && Array.isArray(resPrev.data) ? resPrev.data : [];
 
-    // Ultimo snapshot per piattaforma
+    // Ultimo snapshot per piattaforma, attraverso il cambio d'anno
     const byP = {};
-    [...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
+    [...prevData, ...data].sort((a,b)=>new Date(a.data)-new Date(b.data)).forEach(r => { byP[r.piattaforma] = r; });
     lastInvByPiatt = byP;
     renderContiList();
 
@@ -1373,7 +1429,7 @@ async function loadInvestimenti() {
 
     // Grafico andamento
     renderInvChart(data);
-    renderPatrimonioChart(data);
+    renderPatrimonioChart(data, prevData);
 
     // Lista
     const el = document.getElementById('inv-list');
@@ -1631,18 +1687,17 @@ async function addSpesa() {
 // ── UI HELPERS ───────────────────────────────────────────────
 
 // ── ENTRATE ──────────────────────────────────────────────────
-let currentEntrateMonth = currentMonth;
-let currentEntrateYear  = currentYear;
+// Spese ed Entrate condividono lo stesso periodo: il risparmio confronta per
+// definizione entrate e spese dello stesso mese contabile.
 
 function updateEntratMonthLabel() {
-  const lbl = monthRangeLabel(currentEntrateYear, currentEntrateMonth, monthStartDay);
+  const lbl = monthRangeLabel(currentYear, currentMonth, monthStartDay);
   const el = document.getElementById('entrate-month-label');
   if (el) el.textContent = lbl;
 }
 
 function changeMonthEntrate(d) {
-  currentEntrateMonth = Math.max(1, Math.min(12, currentEntrateMonth + d));
-  loadEntrate();
+  changeMonth(d);
 }
 
 function renderEntrate() {
@@ -1652,7 +1707,7 @@ function renderEntrate() {
   const risp = totE - totS;
   const metricsEl = document.getElementById('entrate-metrics');
   if (metricsEl) metricsEl.innerHTML = `
-    <div class="metric"><div class="label">Entrate ${MONTHS_SHORT[currentEntrateMonth-1]}</div><div class="value">€${fmtDec(totE)}</div></div>
+    <div class="metric"><div class="label">Entrate ${MONTHS_SHORT[currentMonth-1]}</div><div class="value">€${fmtDec(totE)}</div></div>
     <div class="metric"><div class="label">Spese</div><div class="value">€${fmtDec(totS)}</div></div>
     <div class="metric"><div class="label">Risparmio</div><div class="value" style="color:${risp>=0?'var(--green)':'var(--red)'}">€${fmtDec(Math.abs(risp))}</div><div class="delta ${risp>=0?'up':'dn'}">${risp>=0?'avanzo':'deficit'}</div></div>`;
   const el = document.getElementById('entrate-list');
@@ -1660,7 +1715,7 @@ function renderEntrate() {
   if (!entrate.length) { el.innerHTML='<div class="empty">Nessuna entrata questo mese</div>'; return; }
   el.innerHTML = [...entrate].sort((a,b)=>new Date(b.data)-new Date(a.data)).map(e => {
     const d = new Date(e.data);
-    const year = e.data ? e.data.slice(0,4) : currentEntrateYear;
+    const year = e.data ? e.data.slice(0,4) : currentYear;
     return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="amt" style="color:var(--green)">+€${fmtDec(e.importo)}</span><button class="edit-btn" onclick="openEditMovimento('entrate','${e.id}','${year}')" title="Modifica">✎</button><button class="del-btn" onclick="deleteMovimento('entrate','${e.id}','${year}')" title="Elimina">✕</button></div></div>`;
   }).join('');
 }
@@ -1670,11 +1725,11 @@ async function loadEntrate() {
     updateEntratMonthLabel();
     let rows;
     if (monthStartDay <= 1) {
-      const res = await apiGet({action:'getEntrate', year:currentEntrateYear, month:currentEntrateMonth});
+      const res = await apiGet({action:'getEntrate', year:currentYear, month:currentMonth});
       if (!res.ok) return;
       rows = res.data;
     } else {
-      const rng = getMonthRange(currentEntrateYear, currentEntrateMonth, monthStartDay);
+      const rng = getMonthRange(currentYear, currentMonth, monthStartDay);
       const fromY = rng.from.getFullYear(), fromM = rng.from.getMonth()+1;
       const toY   = rng.to.getFullYear(),   toM   = rng.to.getMonth()+1;
       const res1 = await apiGet({action:'getEntrate', year:fromY, month:fromM});
@@ -1891,10 +1946,41 @@ function renderDonutChart() {
     </div>`;
 }
 
-function renderPatrimonioChart(data) {
+function snapDateISO(v) {
+  return v instanceof Date ? localISO(v) : String(v).slice(0,10);
+}
+
+// Uno snapshot è uno stock, non un flusso: il valore di una piattaforma resta valido
+// finché non arriva uno snapshot più recente. Somma quindi l'ultimo valore noto di
+// ogni piattaforma a ciascuna data, non solo quelle registrate in quella data.
+// seedRows (anno precedente) porta i valori già noti nell'anno corrente.
+function patrimonioDaily(rows, seedRows) {
+  const byDate = {};
+  const last   = {}; // piattaforma -> ultimo valore noto
+  const sortByDate = arr => [...arr].sort((a,b) => new Date(a.data) - new Date(b.data));
+
+  let seedDate = null;
+  sortByDate(seedRows || []).forEach(r => {
+    last[r.piattaforma] = Number(r.valore) || 0;
+    seedDate = snapDateISO(r.data);
+  });
+  // Punto di continuità: patrimonio complessivo alla fine del periodo precedente
+  if (seedDate) byDate[seedDate] = Object.values(last).reduce((s,v) => s+v, 0);
+
+  sortByDate(rows).forEach(r => {
+    last[r.piattaforma] = Number(r.valore) || 0;
+    byDate[snapDateISO(r.data)] = Object.values(last).reduce((s,v) => s+v, 0);
+  });
+
+  return Object.entries(byDate)
+    .sort((a,b) => new Date(a[0]) - new Date(b[0]))
+    .map(([x,y]) => ({ x, y }));
+}
+
+function renderPatrimonioChart(data, prevData) {
   const ctx = document.getElementById('patrimonioChart');
   if (!ctx) return;
-  if (!data.length) {
+  if (!data.length && !(prevData || []).length) {
     ctx.style.display = 'none';
     const wrap = ctx.parentElement;
     if (wrap && !wrap.querySelector('.chart-empty')) {
@@ -1905,19 +1991,7 @@ function renderPatrimonioChart(data) {
     }
     return;
   }
-  // Aggrega tutti i valori per data (somma piattaforme), poi raggruppa per settimana
-  const byDate = {};
-  data.forEach(r => {
-    const d = r.data instanceof Date
-      ? r.data.toISOString().slice(0,10)
-      : String(r.data).slice(0,10);
-    if (!byDate[d]) byDate[d] = 0;
-    byDate[d] += Number(r.valore) || 0;
-  });
-  const daily = Object.entries(byDate)
-    .sort((a,b) => new Date(a[0]) - new Date(b[0]))
-    .map(([d,v]) => ({ x: d, y: v }));
-  const points = groupByWeek(daily);
+  const points = groupByWeek(patrimonioDaily(data, prevData));
   if (points.length < 2) {
     ctx.style.display = 'none';
     const wrap = ctx.parentElement;
@@ -1997,9 +2071,15 @@ function showTab(id, btn) {
   btn.classList.add('active');
 }
 
+// Sposta un periodo di d mesi gestendo il passaggio d'anno.
+function shiftMonth(year, month, d) {
+  const idx = year * 12 + (month - 1) + d;
+  return { year: Math.floor(idx / 12), month: (idx % 12) + 1 };
+}
+
 function changeMonth(d) {
-  currentMonth = Math.max(1, Math.min(12, currentMonth+d));
-  loadSpese();
+  ({ year: currentYear, month: currentMonth } = shiftMonth(currentYear, currentMonth, d));
+  loadPeriodo();
 }
 
 function setView(v, btn) {
@@ -2115,8 +2195,7 @@ function saveMonthStartDay(val) {
   const d = Math.max(1, Math.min(28, parseInt(val) || 1));
   monthStartDay = d;
   localStorage.setItem('finanze_monthStartDay', d);
-  loadSpese();
-  loadEntrate();
+  loadPeriodo();
 }
 
 // Auto-start
