@@ -668,7 +668,7 @@
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycby2Zogds8EN8_NiH71cupTta0Oym3PruwvcASLSMqnBVHJrZkI5UjNdrXCpDyzuxc--/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwRPfS4rqgrVqxPxmZYXBerFLGGBBMxGdweL5IvLXkHhrR3znLvW8tnrT88_k8yCDlo/exec';
 
 // ── APP STATE ────────────────────────────────────────────────
 let CATS = {};
@@ -824,15 +824,35 @@ function setStatus(state, text) {
 }
 
 // ── RELOAD ───────────────────────────────────────────────────
+// Una sola richiesta porta tutto il necessario all'avvio. Il calcolo del periodo
+// contabile resta qui: al server si passano i mesi solari già risolti.
+async function fetchBootstrap() {
+  const p = periodoCorrente();
+  const res = await apiGet({
+    action:    'getBootstrap',
+    mesi:      p.mesi.map(m => m.year + '-' + m.month).join(','),
+    invAnni:   THIS_YEAR + ',' + (THIS_YEAR - 1),
+    annoTrend: THIS_YEAR
+  });
+  return res && res.ok ? res.data : null;
+}
+
 async function reloadAll() {
   setStatus('load','connessione...');
+  const t0 = performance.now();
   try {
-    await Promise.all([loadCategorie(), loadConti(), loadSummaryAnno()]);
-    console.log('categorie e conti OK');
-    await loadPeriodo();
-    console.log('spese e entrate OK');
-    await loadInvestimenti();
-    console.log('investimenti OK');
+    // Se il backend non è ancora aggiornato risponde "azione non riconosciuta":
+    // si ricade sulle chiamate granulari, così il frontend resta pubblicabile
+    // prima del deploy di Apps Script.
+    let pre = null;
+    try { pre = await fetchBootstrap(); } catch(e) { console.warn('bootstrap:', e.message); }
+    if (!pre) console.info('bootstrap non disponibile — chiamate granulari');
+
+    await Promise.all([loadCategorie(pre), loadConti(pre), loadSummaryAnno(pre)]);
+    await loadPeriodo(pre);
+    await loadInvestimenti(pre);
+    console.log(`caricamento completo in ${Math.round(performance.now() - t0)}ms` +
+                (pre ? ' (bootstrap)' : ' (granulare)'));
     setStatus('ok','sincronizzato');
   } catch(e) {
     console.error('reloadAll error:', e);
@@ -841,8 +861,17 @@ async function reloadAll() {
 }
 
 // ── CATEGORIE ────────────────────────────────────────────────
-async function loadCategorie() {
+// I loader accettano dati già pronti: il bootstrap li passa senza rifare le
+// richieste, gli aggiornamenti mirati li omettono e la fetch avviene qui.
+async function loadCategorie(pre) {
   try {
+    if (pre) {
+      CATS = pre.categorie || {};
+      CATS_ENTRATE = pre.categorieEntrate || [];
+      buildEntrateSelects();
+      buildCatSelects();
+      return;
+    }
     const [res, resE] = await Promise.all([
       apiGet({action:'getCategorie'}),
       apiGet({action:'getCategorieEntrate'})
@@ -919,11 +948,14 @@ function toggleNewCat() {
 }
 
 // ── CONTI ────────────────────────────────────────────────────
-async function loadConti() {
+async function loadConti(pre) {
   try {
-    const res = await apiGet({action:'getConti'});
-    if (!res.ok) throw new Error(res.error);
-    CONTI = res.data;
+    if (pre) CONTI = pre.conti || [];
+    else {
+      const res = await apiGet({action:'getConti'});
+      if (!res.ok) throw new Error(res.error);
+      CONTI = res.data;
+    }
     renderContiList();
     buildCatSelects();
   } catch(e) {
@@ -932,8 +964,12 @@ async function loadConti() {
   }
 }
 
-async function loadSummaryAnno() {
+async function loadSummaryAnno(pre) {
   try {
+    if (pre) {
+      if (pre.summaryAnno) { summaryAnno = pre.summaryAnno; renderTrendAnnoChart(); }
+      return;
+    }
     const res = await apiGet({ action: 'getSummaryAnno', year: THIS_YEAR });
     if (res.ok) {
       summaryAnno = res.data;
@@ -994,29 +1030,40 @@ function renderContiList() {
 // Carica spese ed entrate dello stesso periodo. Entrambe rieseguono renderEntrate()
 // al termine, quindi l'ultima a finire rende con i due dataset già aggiornati,
 // qualunque sia l'ordine di arrivo.
-async function loadPeriodo() {
-  await Promise.all([loadSpese(), loadEntrate()]);
+async function loadPeriodo(pre) {
+  await Promise.all([loadSpese(pre), loadEntrate(pre)]);
 }
 
-async function loadSpese() {
+// Mesi solari coperti dal periodo contabile corrente, più il range ISO per
+// ritagliarlo. Con monthStartDay > 1 il periodo scavalca due mesi solari.
+function periodoCorrente() {
+  if (monthStartDay <= 1) {
+    return { mesi: [{ year: currentYear, month: currentMonth }], fromISO: null, toISO: null };
+  }
+  const rng  = getMonthRange(currentYear, currentMonth, monthStartDay);
+  const mesi = [{ year: rng.from.getFullYear(), month: rng.from.getMonth() + 1 }];
+  const toY  = rng.to.getFullYear(), toM = rng.to.getMonth() + 1;
+  if (toY !== mesi[0].year || toM !== mesi[0].month) mesi.push({ year: toY, month: toM });
+  return { mesi, fromISO: rng.fromISO, toISO: rng.toISO };
+}
+
+function filtraPeriodo(rows, p) {
+  if (!p.fromISO) return rows;
+  return rows.filter(r => r.data >= p.fromISO && r.data <= p.toISO);
+}
+
+async function loadSpese(pre) {
   try {
     updateMonthLabel();
+    const p = periodoCorrente();
     let rows;
-    if (monthStartDay <= 1) {
-      const res = await apiGet({action:'getSpese', year:currentYear, month:currentMonth});
-      if (!res.ok) throw new Error(res.error);
-      rows = res.data;
+    if (pre) {
+      rows = filtraPeriodo(pre.spese || [], p);
     } else {
-      const rng = getMonthRange(currentYear, currentMonth, monthStartDay);
-      const fromY = rng.from.getFullYear(), fromM = rng.from.getMonth()+1;
-      const toY   = rng.to.getFullYear(),   toM   = rng.to.getMonth()+1;
-      const res1 = await apiGet({action:'getSpese', year:fromY, month:fromM});
-      if (!res1.ok) throw new Error(res1.error);
-      rows = res1.data.filter(r => r.data >= rng.fromISO);
-      if (fromY !== toY || fromM !== toM) {
-        const res2 = await apiGet({action:'getSpese', year:toY, month:toM});
-        if (res2.ok) rows = rows.concat(res2.data.filter(r => r.data <= rng.toISO));
-      }
+      const res = await Promise.all(p.mesi.map(m =>
+        apiGet({action:'getSpese', year:m.year, month:m.month})));
+      if (!res[0].ok) throw new Error(res[0].error);
+      rows = filtraPeriodo(res.filter(r => r.ok).flatMap(r => r.data), p);
     }
     currentSpese = rows;
     applyFilters();
@@ -1383,18 +1430,26 @@ async function saveEditMovimento() {
 }
 
 // ── INVESTIMENTI ─────────────────────────────────────────────
-async function loadInvestimenti() {
+async function loadInvestimenti(pre) {
   try {
     buildPiattButtons();
     // Anche l'anno precedente: una piattaforma il cui ultimo snapshot è di dicembre
     // deve continuare a contare nel patrimonio a gennaio.
-    const [res, resPrev] = await Promise.all([
-      apiGet({action:'getInvestimenti', year:THIS_YEAR}),
-      apiGet({action:'getInvestimenti', year:THIS_YEAR - 1})
-    ]);
-    if (!res.ok) return;
-    const data     = res.data;
-    const prevData = resPrev.ok && Array.isArray(resPrev.data) ? resPrev.data : [];
+    let data, prevData;
+    if (pre) {
+      const tutti = pre.investimenti || [];
+      const annoDi = r => String(snapDateISO(r.data)).slice(0, 4);
+      data     = tutti.filter(r => annoDi(r) === String(THIS_YEAR));
+      prevData = tutti.filter(r => annoDi(r) !== String(THIS_YEAR));
+    } else {
+      const [res, resPrev] = await Promise.all([
+        apiGet({action:'getInvestimenti', year:THIS_YEAR}),
+        apiGet({action:'getInvestimenti', year:THIS_YEAR - 1})
+      ]);
+      if (!res.ok) return;
+      data     = res.data;
+      prevData = resPrev.ok && Array.isArray(resPrev.data) ? resPrev.data : [];
+    }
 
     // Ultimo snapshot per piattaforma, attraverso il cambio d'anno
     const byP = {};
@@ -1720,25 +1775,18 @@ function renderEntrate() {
   }).join('');
 }
 
-async function loadEntrate() {
+async function loadEntrate(pre) {
   try {
     updateEntratMonthLabel();
+    const p = periodoCorrente();
     let rows;
-    if (monthStartDay <= 1) {
-      const res = await apiGet({action:'getEntrate', year:currentYear, month:currentMonth});
-      if (!res.ok) return;
-      rows = res.data;
+    if (pre) {
+      rows = filtraPeriodo(pre.entrate || [], p);
     } else {
-      const rng = getMonthRange(currentYear, currentMonth, monthStartDay);
-      const fromY = rng.from.getFullYear(), fromM = rng.from.getMonth()+1;
-      const toY   = rng.to.getFullYear(),   toM   = rng.to.getMonth()+1;
-      const res1 = await apiGet({action:'getEntrate', year:fromY, month:fromM});
-      if (!res1.ok) return;
-      rows = res1.data.filter(r => r.data >= rng.fromISO);
-      if (fromY !== toY || fromM !== toM) {
-        const res2 = await apiGet({action:'getEntrate', year:toY, month:toM});
-        if (res2.ok) rows = rows.concat(res2.data.filter(r => r.data <= rng.toISO));
-      }
+      const res = await Promise.all(p.mesi.map(m =>
+        apiGet({action:'getEntrate', year:m.year, month:m.month})));
+      if (!res[0].ok) return;
+      rows = filtraPeriodo(res.filter(r => r.ok).flatMap(r => r.data), p);
     }
     currentEntrate = rows;
     renderEntrate();

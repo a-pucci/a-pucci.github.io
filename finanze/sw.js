@@ -2,7 +2,7 @@ const CACHE_VERSION = 'v6';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
 
-const API_URL = 'https://script.google.com/macros/s/AKfycby2Zogds8EN8_NiH71cupTta0Oym3PruwvcASLSMqnBVHJrZkI5UjNdrXCpDyzuxc--/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwRPfS4rqgrVqxPxmZYXBerFLGGBBMxGdweL5IvLXkHhrR3znLvW8tnrT88_k8yCDlo/exec';
 
 const APP_SHELL = [
   '/finanze/',

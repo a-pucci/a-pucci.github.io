@@ -22,7 +22,7 @@ function diagnostica() {
   try {
     const id = props['ID_CONTI'];
     if (!id) { Logger.log('ID_CONTI non trovato'); return; }
-    const ss    = SpreadsheetApp.openById(id);
+    const ss    = openById_(id);
     Logger.log('File Conti: ' + ss.getName() + ' — ' + ss.getUrl());
     const sheet = ss.getSheets()[0];
     const data  = sheet.getDataRange().getValues();
@@ -300,7 +300,7 @@ function setupBudget_(ss) {
   const catId = props.getProperty('ID_CATEGORIE');
   if (catId) {
     try {
-      const catSS = SpreadsheetApp.openById(catId);
+      const catSS = openById_(catId);
       const catSheet = catSS.getSheetByName('Uscite') || catSS.getSheets()[0];
       const data = catSheet.getDataRange().getValues().slice(1)
         .filter(r => r[4] === 'TRUE' || r[4] === true);
@@ -395,6 +395,7 @@ function doGet(e) {
       case 'getBudget':       result = getBudget_(params); break;
       case 'getSummary':      result = getSummary_(params);break;
       case 'getSummaryAnno':  result = getSummaryAnno_(params); break;
+      case 'getBootstrap':    result = getBootstrap_(params);   break;
       default:
         result = { error: 'Azione non riconosciuta: ' + action };
     }
@@ -447,7 +448,7 @@ function getCategorie_() {
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty('ID_CATEGORIE');
   if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
-  const sheet = SpreadsheetApp.openById(id).getSheetByName('Uscite');
+  const sheet = openById_(id).getSheetByName('Uscite');
   if (!sheet) throw new Error('Foglio "Uscite" non trovato in Categorie');
   const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
   const cats  = {};
@@ -469,7 +470,7 @@ function getCategorieEntrate_() {
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty('ID_CATEGORIE');
   if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
-  const sheet = SpreadsheetApp.openById(id).getSheetByName('Entrate');
+  const sheet = openById_(id).getSheetByName('Entrate');
   if (!sheet) throw new Error('Foglio "Entrate" non trovato in Categorie');
   const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
   const cats  = data
@@ -626,6 +627,97 @@ function getSummary_(params) {
   };
 }
 
+// ── Cache di esecuzione ──────────────────────────────────────
+// Aprire uno Spreadsheet costa secondi e ha latenza molto variabile: misurato,
+// anche leggere 5 righe da Conti puo' richiedere decine di secondi, perche' il
+// costo sta nell'apertura del file Drive, non nei dati. Una richiesta di bootstrap
+// tocca gli stessi file piu' volte (Categorie due volte, Spese_ANNO sia per il mese
+// sia per il riepilogo annuale): qui si paga una volta sola.
+// I globali vivono quanto la singola esecuzione, quindi nessun dato stantio puo'
+// sopravvivere tra richieste diverse.
+
+var _ssCache_ = {};
+
+/**
+ * Apre uno Spreadsheet per ID, riusando quello gia' aperto nella stessa esecuzione.
+ * @param {string} id
+ * @returns {Spreadsheet}
+ */
+function openById_(id) {
+  if (!_ssCache_[id]) _ssCache_[id] = SpreadsheetApp.openById(id);
+  return _ssCache_[id];
+}
+
+// Cache dei valori letti. Attiva solo quando vale un oggetto: la si accende nelle
+// sole operazioni di sola lettura, cosi' una scrittura non puo' mai vedere righe
+// obsolete lette prima della modifica.
+var _valuesCache_ = null;
+
+/**
+ * Esegue fn restituendo un fallback se lancia. Serve a impedire che un foglio
+ * mancante (es. Investimenti_2025 mai creato) faccia fallire l'intero bootstrap.
+ * @param {Function} fn
+ * @param {*} fallback
+ * @returns {*}
+ */
+function safe_(fn, fallback) {
+  try { return fn(); } catch (e) { return fallback; }
+}
+
+/**
+ * Restituisce in una sola risposta tutto il necessario all'avvio della dashboard,
+ * al posto delle ~8 richieste separate che pagavano ognuna apertura file e cold start.
+ *
+ * La logica del periodo contabile resta sul client, che passa esplicitamente i mesi
+ * solari da leggere: qui non si duplica il calcolo del range.
+ *
+ * @param {{ mesi?: string, invAnni?: string, annoTrend?: string|number }} params
+ *   mesi      - mesi solari "YYYY-M" separati da virgola, es. "2026-5,2026-6"
+ *   invAnni   - anni degli snapshot investimenti, es. "2026,2025"
+ *   annoTrend - anno del grafico andamento annuale, es. "2026"
+ * @returns {{ ok: boolean, data: Object }}
+ */
+function getBootstrap_(params) {
+  const mesi = String(params.mesi || '').split(',').filter(String).map(function(s) {
+    const parts = s.split('-');
+    return { year: parts[0], month: parseInt(parts[1], 10) };
+  });
+  const invAnni   = String(params.invAnni || '').split(',').filter(String);
+  const annoTrend = params.annoTrend || CONFIG.YEAR;
+
+  _valuesCache_ = {};   // sola lettura: deduplica le letture ripetute
+  try {
+    const spese = [], entrate = [], investimenti = [];
+
+    mesi.forEach(function(m) {
+      Array.prototype.push.apply(spese,
+        safe_(function() { return getSpese_({ year: m.year, month: m.month }).data; }, []));
+      Array.prototype.push.apply(entrate,
+        safe_(function() { return getEntrate_({ year: m.year, month: m.month }).data; }, []));
+    });
+
+    invAnni.forEach(function(y) {
+      Array.prototype.push.apply(investimenti,
+        safe_(function() { return getInvestimenti_({ year: y }).data; }, []));
+    });
+
+    return {
+      ok: true,
+      data: {
+        categorie:        safe_(function() { return getCategorie_().data; }, {}),
+        categorieEntrate: safe_(function() { return getCategorieEntrate_().data; }, []),
+        conti:            safe_(function() { return getConti_().data; }, []),
+        summaryAnno:      safe_(function() { return getSummaryAnno_({ year: annoTrend }).data; }, null),
+        spese: spese,
+        entrate: entrate,
+        investimenti: investimenti
+      }
+    };
+  } finally {
+    _valuesCache_ = null;
+  }
+}
+
 /**
  * Calcola i totali mensili di spese ed entrate per l'intero anno (12 mesi).
  * Usato dal grafico andamento annuale nella dashboard.
@@ -729,7 +821,7 @@ function addInvestimento_(body) {
  */
 function addCategoria_(body) {
   const props = PropertiesService.getScriptProperties();
-  const ss    = SpreadsheetApp.openById(props.getProperty('ID_CATEGORIE'));
+  const ss    = openById_(props.getProperty('ID_CATEGORIE'));
   const sheet = ss.getSheetByName('Uscite') || ss.getSheets()[0];
   sheet.appendRow([
     body.categoria, body.sottocategoria || '',
@@ -737,7 +829,7 @@ function addCategoria_(body) {
   ]);
 
   try {
-    const budgSS    = SpreadsheetApp.openById(props.getProperty('ID_BUDGET'));
+    const budgSS    = openById_(props.getProperty('ID_BUDGET'));
     const budgSheet = budgSS.getSheets()[0];
     budgSheet.appendRow([body.categoria, body.sottocategoria || '', 0,0,0,0,0,0,0,0,0,0,0,0]);
   } catch(e) {}
@@ -752,7 +844,7 @@ function addCategoria_(body) {
  */
 function addConto_(body) {
   const props = PropertiesService.getScriptProperties();
-  const ss    = SpreadsheetApp.openById(props.getProperty('ID_CONTI'));
+  const ss    = openById_(props.getProperty('ID_CONTI'));
   const sheet = ss.getSheets()[0];
   sheet.appendRow([
     generateId_(), body.nome, body.tipo,
@@ -769,7 +861,7 @@ function addConto_(body) {
  */
 function updateBudget_(body) {
   const props = PropertiesService.getScriptProperties();
-  const ss    = SpreadsheetApp.openById(props.getProperty('ID_BUDGET'));
+  const ss    = openById_(props.getProperty('ID_BUDGET'));
   const sheet = ss.getSheets()[0];
   const data  = sheet.getDataRange().getValues();
 
@@ -799,7 +891,7 @@ function updateRow_(body) {
 
   const props = PropertiesService.getScriptProperties();
   const keyProp = 'ID_' + body.sheetKey.toUpperCase();
-  const ss    = SpreadsheetApp.openById(props.getProperty(keyProp));
+  const ss    = openById_(props.getProperty(keyProp));
   const sheet = ss.getSheetByName(sheetName);
   const data  = sheet.getDataRange().getValues();
 
@@ -828,7 +920,7 @@ function deleteRow_(body) {
 
   const props = PropertiesService.getScriptProperties();
   const keyProp = 'ID_' + body.sheetKey.toUpperCase();
-  const ss    = SpreadsheetApp.openById(props.getProperty(keyProp));
+  const ss    = openById_(props.getProperty(keyProp));
   const sheet = ss.getSheetByName(sheetName);
   const data  = sheet.getDataRange().getValues();
 
@@ -852,7 +944,7 @@ function updateSaldoConto_(nomeConto, delta) {
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty('ID_CONTI');
   if (!id) return;
-  const ss    = SpreadsheetApp.openById(id);
+  const ss    = openById_(id);
   const sheet = ss.getSheets()[0];
   const data  = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
@@ -875,7 +967,7 @@ function readSheet_(propKey) {
   const props = PropertiesService.getScriptProperties();
   const id    = props.getProperty(propKey);
   if (!id) throw new Error('ID non trovato per: ' + propKey);
-  const ss    = SpreadsheetApp.openById(id);
+  const ss    = openById_(id);
   const sheet = ss.getSheets()[0];
   const data  = sheet.getDataRange().getValues();
   return data.slice(1).filter(r => r.some(c => c !== ''));
@@ -888,15 +980,18 @@ function readSheet_(propKey) {
  * @returns {Array[]} Righe dati (senza header)
  */
 function readSheetByName_(sheetName) {
+  if (_valuesCache_ && _valuesCache_[sheetName]) return _valuesCache_[sheetName];
   const yearKey  = 'ID_' + sheetName.split('_')[0].toUpperCase();
   const props    = PropertiesService.getScriptProperties();
   const id       = props.getProperty(yearKey);
   if (!id) throw new Error('ID non trovato per: ' + yearKey);
-  const ss       = SpreadsheetApp.openById(id);
+  const ss       = openById_(id);
   const sheet    = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error('Foglio non trovato: ' + sheetName);
   const data     = sheet.getDataRange().getValues();
-  return data.slice(1).filter(r => r.some(c => c !== ''));
+  const rows     = data.slice(1).filter(r => r.some(c => c !== ''));
+  if (_valuesCache_) _valuesCache_[sheetName] = rows;
+  return rows;
 }
 
 /**
@@ -927,7 +1022,7 @@ function appendRow_(sheetName, row) {
     return;
   }
 
-  const ss    = SpreadsheetApp.openById(id);
+  const ss    = openById_(id);
   let sheet   = ss.getSheetByName(sheetName);
 
   if (!sheet) {
