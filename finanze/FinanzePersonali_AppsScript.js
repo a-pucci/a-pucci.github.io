@@ -445,20 +445,22 @@ function doPost(e) {
  * @returns {{ ok: boolean, data: Object.<string, {color: string, icon: string, subs: string[]}> }}
  */
 function getCategorie_() {
-  const props = PropertiesService.getScriptProperties();
-  const id    = props.getProperty('ID_CATEGORIE');
-  if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
-  const sheet = openById_(id).getSheetByName('Uscite');
-  if (!sheet) throw new Error('Foglio "Uscite" non trovato in Categorie');
-  const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
-  const cats  = {};
-  data.forEach(row => {
-    const [cat, sub, color, icon, active] = row;
-    if (active !== 'TRUE' && active !== true) return;
-    if (!cats[cat]) cats[cat] = { color, icon, subs: [] };
-    if (sub) cats[cat].subs.push(sub);
+  return cached_('cat_uscite', function() {
+    const props = PropertiesService.getScriptProperties();
+    const id    = props.getProperty('ID_CATEGORIE');
+    if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
+    const sheet = openById_(id).getSheetByName('Uscite');
+    if (!sheet) throw new Error('Foglio "Uscite" non trovato in Categorie');
+    const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
+    const cats  = {};
+    data.forEach(row => {
+      const [cat, sub, color, icon, active] = row;
+      if (active !== 'TRUE' && active !== true) return;
+      if (!cats[cat]) cats[cat] = { color, icon, subs: [] };
+      if (sub) cats[cat].subs.push(sub);
+    });
+    return { ok: true, data: cats };
   });
-  return { ok: true, data: cats };
 }
 
 /**
@@ -467,17 +469,19 @@ function getCategorie_() {
  * @returns {{ ok: boolean, data: string[] }}
  */
 function getCategorieEntrate_() {
-  const props = PropertiesService.getScriptProperties();
-  const id    = props.getProperty('ID_CATEGORIE');
-  if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
-  const sheet = openById_(id).getSheetByName('Entrate');
-  if (!sheet) throw new Error('Foglio "Entrate" non trovato in Categorie');
-  const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
-  const cats  = data
-    .filter(r => r[1] === 'TRUE' || r[1] === true)
-    .map(r => String(r[0]).trim())
-    .filter(Boolean);
-  return { ok: true, data: cats };
+  return cached_('cat_entrate', function() {
+    const props = PropertiesService.getScriptProperties();
+    const id    = props.getProperty('ID_CATEGORIE');
+    if (!id) throw new Error('ID non trovato per: ID_CATEGORIE');
+    const sheet = openById_(id).getSheetByName('Entrate');
+    if (!sheet) throw new Error('Foglio "Entrate" non trovato in Categorie');
+    const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
+    const cats  = data
+      .filter(r => r[1] === 'TRUE' || r[1] === true)
+      .map(r => String(r[0]).trim())
+      .filter(Boolean);
+    return { ok: true, data: cats };
+  });
 }
 
 /**
@@ -485,15 +489,17 @@ function getCategorieEntrate_() {
  * @returns {{ ok: boolean, data: Array }}
  */
 function getConti_() {
-  const data = readSheet_('ID_CONTI');
-  const conti = data
-    .filter(r => r[7] === 'TRUE' || r[7] === true)
-    .map(r => ({
-      id: r[0], nome: r[1], tipo: r[2],
-      piattaforma: r[3], valuta: r[5], note: r[6],
-      saldo: parseNum_(r[8])
-    }));
-  return { ok: true, data: conti };
+  return cached_('conti', function() {
+    const data = readSheet_('ID_CONTI');
+    const conti = data
+      .filter(r => r[7] === 'TRUE' || r[7] === true)
+      .map(r => ({
+        id: r[0], nome: r[1], tipo: r[2],
+        piattaforma: r[3], valuta: r[5], note: r[6],
+        saldo: parseNum_(r[8])
+      }));
+    return { ok: true, data: conti };
+  });
 }
 
 /**
@@ -637,6 +643,43 @@ function getSummary_(params) {
 // sopravvivere tra richieste diverse.
 
 var _ssCache_ = {};
+
+// Categorie e conti cambiano di rado ma vengono riletti da Drive a ogni richiesta.
+// CacheService li conserva tra esecuzioni diverse, quindi il costo di apertura del
+// file si paga una volta ogni TTL invece che a ogni avvio dell'app.
+const CACHE_TTL_SEC   = 21600;   // 6 ore, il massimo consentito da CacheService
+const CACHE_ANAGRAFICHE = ['cat_uscite', 'cat_entrate', 'conti'];
+
+/**
+ * Restituisce il valore in cache per la chiave, calcolandolo con fn se assente.
+ * Un guasto della cache non deve mai impedire la risposta: in caso di errore si
+ * ricade sulla lettura diretta.
+ * @param {string} chiave
+ * @param {Function} fn - calcola il valore quando la cache non ce l'ha
+ * @returns {*}
+ */
+function cached_(chiave, fn) {
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  if (cache) {
+    const hit = cache.get(chiave);
+    if (hit) {
+      try { return JSON.parse(hit); } catch (e) { /* voce corrotta: si rilegge */ }
+    }
+  }
+  const val = fn();
+  // put fallisce oltre i 100KB per voce: si rinuncia alla cache, non al dato.
+  if (cache) { try { cache.put(chiave, JSON.stringify(val), CACHE_TTL_SEC); } catch (e) {} }
+  return val;
+}
+
+/**
+ * Invalida le voci di cache di categorie e conti. Da chiamare dopo ogni scrittura
+ * su quei fogli, altrimenti la modifica resterebbe invisibile fino alla scadenza.
+ */
+function invalidaAnagrafiche_() {
+  try { CacheService.getScriptCache().removeAll(CACHE_ANAGRAFICHE); } catch (e) {}
+}
 
 /**
  * Apre uno Spreadsheet per ID, riusando quello gia' aperto nella stessa esecuzione.
@@ -834,6 +877,7 @@ function addCategoria_(body) {
     budgSheet.appendRow([body.categoria, body.sottocategoria || '', 0,0,0,0,0,0,0,0,0,0,0,0]);
   } catch(e) {}
 
+  invalidaAnagrafiche_();
   return { ok: true };
 }
 
@@ -851,6 +895,7 @@ function addConto_(body) {
     body.piattaforma || '', body.iban || '',
     body.valuta || 'EUR', body.note || '', 'TRUE', 0
   ]);
+  invalidaAnagrafiche_();
   return { ok: true };
 }
 
@@ -947,6 +992,7 @@ function updateSaldoConto_(nomeConto, delta) {
   const ss    = openById_(id);
   const sheet = ss.getSheets()[0];
   const data  = sheet.getDataRange().getValues();
+  invalidaAnagrafiche_();   // il saldo cambia: la copia in cache non vale piu'
   for (let i = 1; i < data.length; i++) {
     if (data[i][1] === nomeConto) {
       const current = parseNum_(data[i][8]);
