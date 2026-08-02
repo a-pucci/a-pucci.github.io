@@ -167,10 +167,18 @@
   .row .name { color: var(--text); }
   .row .sub  { font-size: 11px; color: var(--hint); margin-top: 2px; }
   .row .amt  { font-family: var(--mono); font-weight: 500; color: var(--text); }
-  .row .del-btn  { background: none; border: none; cursor: pointer; color: var(--hint); font-size: 15px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; transition: opacity .15s, color .15s; }
+  /* 44px di lato: sotto quella soglia il bersaglio e' piu' piccolo del polpastrello
+     e si sbaglia pulsante. L'icona resta piccola, cresce solo l'area sensibile. */
+  .row .del-btn, .row .edit-btn { background: none; border: none; cursor: pointer;
+    color: var(--hint); font-size: 15px; padding: 0; border-radius: 4px; opacity: 0.5;
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center;
+    justify-content: center; transition: opacity .15s, color .15s;
+    /* l'area sensibile sconfina nel padding della riga, che e' spazio morto:
+       cosi' si arriva a 44px senza far crescere la lista */
+    margin-top: -8px; margin-bottom: -8px; }
   .row .del-btn:hover  { opacity: 1; color: var(--red); }
-  .row .edit-btn { background: none; border: none; cursor: pointer; color: var(--hint); font-size: 15px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; transition: opacity .15s, color .15s; }
   .row .edit-btn:hover { opacity: 1; color: var(--accent); }
+  .row .del-btn:focus-visible, .row .edit-btn:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: -2px; }
   /* ── DISTRIBUZIONE ── */
   .distribuzione-wrap { display: flex; gap: 1.5rem; align-items: center; }
   .distribuzione-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
@@ -211,8 +219,16 @@
   .privacy-btn:hover { color: var(--text); }
 
   .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
-  .modal-card { background:var(--card);border-radius:12px;padding:20px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.5); }
+  /* era var(--card), variabile mai definita: la modale risultava trasparente e il
+     contenuto della pagina si leggeva attraverso il form */
+  .modal-card { background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:20px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto;
+    box-shadow:0 8px 32px rgba(0,0,0,.5); }
   .modal-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:16px; }
+  .modal-header .del-btn { background:none;border:none;cursor:pointer;color:var(--hint);
+    min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;
+    padding:0;border-radius:4px; }
+  .modal-header .del-btn:hover { color:var(--red); }
   .modal-header .card-title { margin:0; }
 
   /* ── QUICK ADD ── */
@@ -1392,8 +1408,8 @@ function renderTxList() {
       </div>
       <div style="display:flex;align-items:center;gap:4px">
         <span class="amt">€${fmtDec(e.importo)}</span>
-        <button class="edit-btn" onclick="openEditMovimento('spese','${e.id}','${year}')" title="Modifica">✎</button>
-        <button class="del-btn" onclick="deleteMovimento('spese','${e.id}','${year}')" title="Elimina">✕</button>
+        <button class="edit-btn" onclick="openEditMovimento('spese','${e.id}','${year}')" aria-label="Modifica movimento" title="Modifica">✎</button>
+        <button class="del-btn" onclick="deleteMovimento('spese','${e.id}','${year}')" aria-label="Elimina movimento" title="Elimina">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -1522,11 +1538,62 @@ function openEditMovimento(sheetKey, id, year) {
   const errEl = document.getElementById('edit-err');
   if (errEl) errEl.style.display = 'none';
   modal.style.display = 'flex';
+  apriModale(modal);
 }
 
-function closeEditModal() {
+// ── ACCESSIBILITÀ MODALE ─────────────────────────────────────
+let _modaleOrigine = null;   // elemento a cui restituire il focus alla chiusura
+let _modaleInHistory = false;
+
+const _FOCUSABILI = 'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])';
+
+function _elementiFocusabili(modal) {
+  return [...modal.querySelectorAll(_FOCUSABILI)]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+}
+
+function apriModale(modal) {
+  _modaleOrigine = document.activeElement;
+  // Voce di history dedicata: su Android il tasto indietro chiude la modale
+  // invece di uscire dall'app.
+  history.pushState({ modale: true }, '');
+  _modaleInHistory = true;
+  document.addEventListener('keydown', _modaleKeydown, true);
+  const focusabili = _elementiFocusabili(modal);
+  if (focusabili.length) focusabili[0].focus();
+}
+
+function closeEditModal(daHistory) {
   const modal = document.getElementById('edit-modal');
-  if (modal) modal.style.display = 'none';
+  if (!modal || modal.style.display === 'none') return;
+  modal.style.display = 'none';
+  document.removeEventListener('keydown', _modaleKeydown, true);
+
+  if (_modaleInHistory) {
+    _modaleInHistory = false;
+    // Se chiude il tasto indietro la voce e' gia' stata consumata dal browser.
+    if (!daHistory) history.back();
+  }
+  if (_modaleOrigine && _modaleOrigine.focus) _modaleOrigine.focus();
+  _modaleOrigine = null;
+}
+
+window.addEventListener('popstate', () => {
+  if (_modaleInHistory) closeEditModal(true);
+});
+
+// Esc chiude; Tab resta dentro la modale, altrimenti si finisce a navigare la
+// pagina sottostante senza vederla.
+function _modaleKeydown(e) {
+  if (e.key === 'Escape') { e.preventDefault(); closeEditModal(); return; }
+  if (e.key !== 'Tab') return;
+  const modal = document.getElementById('edit-modal');
+  if (!modal || modal.style.display === 'none') return;
+  const focusabili = _elementiFocusabili(modal);
+  if (!focusabili.length) return;
+  const primo = focusabili[0], ultimo = focusabili[focusabili.length - 1];
+  if (e.shiftKey && document.activeElement === primo) { e.preventDefault(); ultimo.focus(); }
+  else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primo.focus(); }
 }
 
 function updateEditSubcats() {
@@ -1985,7 +2052,7 @@ function renderEntrate() {
   el.innerHTML = [...entrate].sort((a,b)=>new Date(b.data)-new Date(a.data)).map(e => {
     const d = new Date(e.data);
     const year = e.data ? e.data.slice(0,4) : currentYear;
-    return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="amt" style="color:var(--green)">+€${fmtDec(e.importo)}</span><button class="edit-btn" onclick="openEditMovimento('entrate','${e.id}','${year}')" title="Modifica">✎</button><button class="del-btn" onclick="deleteMovimento('entrate','${e.id}','${year}')" title="Elimina">✕</button></div></div>`;
+    return `<div class="row"><div><div class="name">${e.nota||e.tipo}</div><div class="sub">${e.tipo} · ${d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="amt" style="color:var(--green)">+€${fmtDec(e.importo)}</span><button class="edit-btn" onclick="openEditMovimento('entrate','${e.id}','${year}')" aria-label="Modifica movimento" title="Modifica">✎</button><button class="del-btn" onclick="deleteMovimento('entrate','${e.id}','${year}')" aria-label="Elimina movimento" title="Elimina">✕</button></div></div>`;
   }).join('');
 }
 
@@ -2557,10 +2624,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <div id="edit-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeEditModal()">
-  <div class="modal-card">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
     <div class="modal-header">
       <div class="card-title" id="edit-modal-title">Modifica</div>
-      <button class="del-btn" onclick="closeEditModal()" style="opacity:1;font-size:18px">✕</button>
+      <button class="del-btn" onclick="closeEditModal()" aria-label="Chiudi" style="opacity:1;font-size:18px">✕</button>
     </div>
     <div id="edit-spesa-form">
       <div class="amount-row">
