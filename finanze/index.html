@@ -837,9 +837,83 @@ async function fetchBootstrap() {
   return res && res.ok ? res.data : null;
 }
 
+// Popola l'intera interfaccia. Con `pre` usa quei dati, senza va in rete.
+async function idrata(pre) {
+  await Promise.all([loadCategorie(pre), loadConti(pre), loadSummaryAnno(pre)]);
+  await loadPeriodo(pre);
+  await loadInvestimenti(pre);
+}
+
+// ── CACHE LOCALE ─────────────────────────────────────────────
+// La latenza di Apps Script è fuori dal nostro controllo e oscilla da 1 a 50
+// secondi. L'unica leva è non aspettarla: si rende subito l'ultimo payload noto
+// e si aggiorna in sottofondo (stale-while-revalidate).
+const _CACHE_KEY    = 'finanze_bootstrap';
+const _CACHE_SCHEMA = 1;   // da alzare quando cambia la forma del payload
+
+function _periodoKey() {
+  return currentYear + '-' + currentMonth + '-' + monthStartDay;
+}
+
+function salvaCache(data) {
+  try {
+    localStorage.setItem(_CACHE_KEY, JSON.stringify({
+      v: _CACHE_SCHEMA, salvatoIl: Date.now(), periodo: _periodoKey(), data
+    }));
+  } catch(e) {
+    // quota superata o storage negato: la cache è un'ottimizzazione, non un requisito
+    console.warn('cache non salvata:', e.message);
+  }
+}
+
+function leggiCache() {
+  let raw;
+  try { raw = localStorage.getItem(_CACHE_KEY); } catch { return null; }
+  if (!raw) return null;
+  try {
+    const c = JSON.parse(raw);
+    // Uno schema diverso significa payload incompatibile: si scarta.
+    if (!c || c.v !== _CACHE_SCHEMA || !c.data) throw new Error('schema incompatibile');
+    return c;
+  } catch(e) {
+    console.warn('cache scartata:', e.message);
+    try { localStorage.removeItem(_CACHE_KEY); } catch {}
+    return null;
+  }
+}
+
+// Spese ed entrate valgono solo per il periodo con cui furono salvate; categorie,
+// conti e investimenti no, quindi restano utili anche cambiando mese.
+function cachePerPeriodoCorrente(c) {
+  if (c.periodo === _periodoKey()) return c.data;
+  return Object.assign({}, c.data, { spese: [], entrate: [] });
+}
+
 async function reloadAll() {
-  setStatus('load','connessione...');
   const t0 = performance.now();
+
+  // 1. Render immediato dall'ultimo stato noto, se c'è.
+  let daCache = false;
+  const c = leggiCache();
+  if (c) {
+    try {
+      await idrata(cachePerPeriodoCorrente(c));
+      daCache = true;
+      setStatus('load', 'aggiorno...');
+      console.log(`render da cache in ${Math.round(performance.now() - t0)}ms`);
+    } catch(e) { console.warn('idratazione da cache fallita:', e.message); }
+  }
+  if (!daCache) setStatus('load', 'connessione...');
+
+  // Offline con dati a schermo: inutile tentare la rete. Il banner offline è già
+  // gestito da _updateOfflineClass.
+  if (!navigator.onLine && daCache) {
+    setStatus('err', 'offline — dati non aggiornati');
+    return;
+  }
+
+  // 2. Aggiornamento in sottofondo.
+  const t1 = performance.now();
   try {
     // Se il backend non è ancora aggiornato risponde "azione non riconosciuta":
     // si ricade sulle chiamate granulari, così il frontend resta pubblicabile
@@ -848,15 +922,21 @@ async function reloadAll() {
     try { pre = await fetchBootstrap(); } catch(e) { console.warn('bootstrap:', e.message); }
     if (!pre) console.info('bootstrap non disponibile — chiamate granulari');
 
-    await Promise.all([loadCategorie(pre), loadConti(pre), loadSummaryAnno(pre)]);
-    await loadPeriodo(pre);
-    await loadInvestimenti(pre);
-    console.log(`caricamento completo in ${Math.round(performance.now() - t0)}ms` +
+    // Il secondo render non deve spostare la pagina sotto le dita di chi la sta
+    // già leggendo. I filtri si conservano da soli: applyFilters li rilegge dal DOM.
+    const scrollY = window.scrollY;
+    await idrata(pre);
+    if (daCache) window.scrollTo(0, scrollY);
+
+    if (pre) salvaCache(pre);
+    console.log(`aggiornamento in ${Math.round(performance.now() - t1)}ms` +
                 (pre ? ' (bootstrap)' : ' (granulare)'));
     setStatus('ok','sincronizzato');
   } catch(e) {
     console.error('reloadAll error:', e);
-    setStatus('err', e.message);
+    // Con dati a schermo l'errore non è fatale: si dice che sono vecchi, non che
+    // non c'è nulla.
+    setStatus('err', daCache ? 'dati non aggiornati' : e.message);
   }
 }
 
