@@ -1,11 +1,18 @@
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const SHELL_CACHE = `finanze-shell-${CACHE_VERSION}`;
 const FONTS_CACHE = `finanze-fonts-${CACHE_VERSION}`;
+
+// La pagina dell'app sta dietro l'autenticazione del Worker Cloudflare, che
+// risponde con il form di login (HTTP 200) quando manca il cookie di sessione.
+// Va quindi tenuta fuori dal pre-caching e servita rete-prima: un form di login
+// finito in cache resterebbe li' anche dopo un accesso riuscito.
+const APP_PAGE     = '/finanze/';
+const HEADER_LOGIN = 'x-finanze-auth';   // il Worker puo' valorizzarlo 'login'
+const APP_MARKER   = 'id="app"';         // presente solo nella pagina vera
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbwRPfS4rqgrVqxPxmZYXBerFLGGBBMxGdweL5IvLXkHhrR3znLvW8tnrT88_k8yCDlo/exec';
 
 const APP_SHELL = [
-  '/finanze/',
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js',
   'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js',
   'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css',
@@ -34,11 +41,41 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// ── FETCH: cache-first per shell, cache-first per font gstatic ─
+// ── FETCH ─────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  if (APP_SHELL.includes(event.request.url) || url.pathname === '/finanze/') {
+  // Mai intercettare le scritture. Il login e' un POST verso /finanze/ e una
+  // risposta ottenuta seguendo un redirect non puo' essere restituita a una
+  // richiesta di navigazione: intercettarlo rompeva l'accesso.
+  if (event.request.method !== 'GET') return;
+
+  // Pagina app: rete-prima, con la cache come rete di sicurezza offline.
+  // Il form di login non viene mai messo in cache.
+  if (url.pathname === APP_PAGE) {
+    event.respondWith(
+      fetch(event.request)
+        .then(res => {
+          if (res.ok && res.headers.get(HEADER_LOGIN) !== 'login') {
+            // Non ci si fida del solo header: si conserva la pagina soltanto se
+            // contiene davvero l'app. Cosi' il fix regge anche senza modifiche
+            // al Worker, e qualsiasi altra interstiziale resta fuori dalla cache.
+            const perControllo = res.clone();
+            const perCache     = res.clone();
+            perControllo.text().then(html => {
+              if (html.includes(APP_MARKER)) {
+                caches.open(SHELL_CACHE).then(cache => cache.put(event.request, perCache));
+              }
+            }).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || Response.error()))
+    );
+    return;
+  }
+
+  if (APP_SHELL.includes(event.request.url)) {
     event.respondWith(
       caches.match(event.request).then(cached => cached || fetch(event.request))
     );
