@@ -891,10 +891,16 @@ function setStatus(state, text) {
 // Una sola richiesta porta tutto il necessario all'avvio. Il calcolo del periodo
 // contabile resta qui: al server si passano i mesi solari già risolti.
 async function fetchBootstrap() {
-  const p = periodoCorrente();
+  // Anche i mesi del periodo precedente: servono al confronto in Panoramica e
+  // costano solo payload, non un giro di rete in piu'.
+  const mesi = [];
+  [periodoCorrente(), periodoPrecedente()].forEach(p => p.mesi.forEach(m => {
+    const chiave = m.year + '-' + m.month;
+    if (!mesi.includes(chiave)) mesi.push(chiave);
+  }));
   const res = await apiGet({
     action:    'getBootstrap',
-    mesi:      p.mesi.map(m => m.year + '-' + m.month).join(','),
+    mesi:      mesi.join(','),
     invAnni:   THIS_YEAR + ',' + (THIS_YEAR - 1),
     annoTrend: THIS_YEAR
   });
@@ -913,7 +919,9 @@ async function idrata(pre) {
 // secondi. L'unica leva è non aspettarla: si rende subito l'ultimo payload noto
 // e si aggiorna in sottofondo (stale-while-revalidate).
 const _CACHE_KEY    = 'finanze_bootstrap';
-const _CACHE_SCHEMA = 1;   // da alzare quando cambia la forma del payload
+// Da alzare quando cambia la forma del payload. v2: include i mesi del periodo
+// precedente; con un payload v1 il confronto in Panoramica leggerebbe zeri.
+const _CACHE_SCHEMA = 2;
 
 function _periodoKey() {
   return currentYear + '-' + currentMonth + '-' + monthStartDay;
@@ -1198,23 +1206,84 @@ async function loadPeriodo(pre) {
   const token = ++_tokenPeriodo;
   if (!pre) segnalaCaricamento(true);   // dalla cache il render e' immediato
   try {
-    await Promise.all([loadSpese(pre, token), loadEntrate(pre, token)]);
+    await Promise.all([
+      loadSpese(pre, token),
+      loadEntrate(pre, token),
+      loadPeriodoPrecedente(pre, token)
+    ]);
+    // Le metriche di Panoramica sono anch'esse di periodo: senza questo restavano
+    // ferme sul mese precedente dopo un cambio mese.
+    if (!periodoScaduto(token)) renderPanoramica();
   } finally {
     if (token === _tokenPeriodo) segnalaCaricamento(false);
   }
 }
 
-// Mesi solari coperti dal periodo contabile corrente, più il range ISO per
-// ritagliarlo. Con monthStartDay > 1 il periodo scavalca due mesi solari.
-function periodoCorrente() {
-  if (monthStartDay <= 1) {
-    return { mesi: [{ year: currentYear, month: currentMonth }], fromISO: null, toISO: null };
+// Totali del periodo precedente, per il confronto in Panoramica. `null` significa
+// "non disponibile": il delta va omesso, non mostrato come zero.
+let totaliPrec = null;
+
+async function loadPeriodoPrecedente(pre, token) {
+  const p = periodoPrecedente();
+  try {
+    let spese, entrate;
+    if (pre) {
+      // Il bootstrap porta i mesi di entrambi i periodi: qui si ritaglia l'altro.
+      spese   = filtraPeriodo(pre.spese || [], p);
+      entrate = filtraPeriodo(pre.entrate || [], p);
+    } else {
+      const [rs, re] = await Promise.all([
+        Promise.all(p.mesi.map(m => apiGet({action:'getSpese',   year:m.year, month:m.month}))),
+        Promise.all(p.mesi.map(m => apiGet({action:'getEntrate', year:m.year, month:m.month})))
+      ]);
+      if (periodoScaduto(token)) return;
+      // Una richiesta fallita darebbe totali parziali, che sembrerebbero un calo
+      // reale: senza tutte le risposte il confronto non si fa.
+      if (![...rs, ...re].every(r => r && r.ok)) { totaliPrec = null; return; }
+      spese   = filtraPeriodo(rs.flatMap(r => r.data), p);
+      entrate = filtraPeriodo(re.flatMap(r => r.data), p);
+    }
+    const t = calcolaTotali(spese, entrate);
+    // Un periodo del tutto privo di movimenti quasi sempre significa foglio
+    // mancante, non un mese in cui non e' successo nulla: il backend restituisce
+    // liste vuote in entrambi i casi. Confrontarsi con zero produrrebbe un
+    // "+100%" inventato, quindi si preferisce non dire niente.
+    totaliPrec = (t.entrate === 0 && t.uscite === 0) ? null : t;
+  } catch(e) {
+    totaliPrec = null;   // meglio nessun confronto che uno sbagliato
   }
-  const rng  = getMonthRange(currentYear, currentMonth, monthStartDay);
+}
+
+// Mesi solari coperti da un periodo contabile, più il range ISO per ritagliarlo.
+// Con monthStartDay > 1 il periodo scavalca due mesi solari. Il range c'è sempre,
+// anche col mese solare: serve a separare due periodi dentro lo stesso payload.
+function periodoPer(year, month) {
+  const rng  = getMonthRange(year, month, monthStartDay);
   const mesi = [{ year: rng.from.getFullYear(), month: rng.from.getMonth() + 1 }];
   const toY  = rng.to.getFullYear(), toM = rng.to.getMonth() + 1;
   if (toY !== mesi[0].year || toM !== mesi[0].month) mesi.push({ year: toY, month: toM });
   return { mesi, fromISO: rng.fromISO, toISO: rng.toISO };
+}
+
+function periodoCorrente() {
+  return periodoPer(currentYear, currentMonth);
+}
+
+function periodoPrecedente() {
+  const p = shiftMonth(currentYear, currentMonth, -1);
+  return periodoPer(p.year, p.month);
+}
+
+// Totali di un periodo. I giroconti non sono ne' spesa ne' entrata; gli acquisti
+// di investimenti escono dal conto ma non sono consumo, quindi contano fra le
+// uscite e non fra le spese.
+function calcolaTotali(spese, entrate) {
+  const reali    = spese.filter(e => e.sottocategoria !== GIROCONTO_SUB);
+  const correnti = reali.filter(e => e.categoria !== INV_CAT);
+  const totSpese   = correnti.reduce((s, r) => s + r.importo, 0);
+  const totUscite  = reali.reduce((s, r) => s + r.importo, 0);
+  const totEntrate = entrate.filter(r => r.tipo !== GIROCONTO_SUB).reduce((s, r) => s + r.importo, 0);
+  return { spese: totSpese, uscite: totUscite, entrate: totEntrate, risparmio: totEntrate - totSpese };
 }
 
 function filtraPeriodo(rows, p) {
@@ -1498,7 +1567,8 @@ function renderTxList() {
 // elimina subito e si lascia l'annullamento a portata di pollice.
 function _renderDopoMutazione(sheetKey) {
   if (sheetKey === 'spese') applyFilters();
-  renderEntrate();   // il risparmio dipende da entrambi i dataset
+  renderEntrate();      // il risparmio dipende da entrambi i dataset
+  renderPanoramica();   // e le metriche di Panoramica dagli stessi totali
 }
 
 async function deleteMovimento(sheetKey, id, year) {
@@ -1773,7 +1843,7 @@ async function loadInvestimenti(pre) {
          </div>`;
 
     // Panoramica — chiamata sempre, anche senza snapshot
-    renderPanoramica(totInv);
+    renderPanoramica();
 
     // Grafico andamento
     renderInvChart(data);
@@ -2185,11 +2255,32 @@ async function addEntrata() {
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Salva entrata'; }
 }
 
-function renderPanoramica(totInv) {
-  const totSpese   = currentSpese.filter(e => e.categoria !== INV_CAT && e.sottocategoria !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
-  const totUscite  = currentSpese.filter(e => e.sottocategoria !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
-  const totEntrate = currentEntrate.filter(r => r.tipo !== GIROCONTO_SUB).reduce((s,r) => s + r.importo, 0);
-  const risparmio  = totEntrate - totSpese;
+/**
+ * Riga di confronto col periodo precedente.
+ * La freccia indica il verso della variazione, il colore se sia una buona notizia:
+ * spese in aumento salgono ma sono rosse.
+ * @param {number} attuale
+ * @param {number|null|undefined} precedente - assente = confronto impossibile
+ * @param {boolean} crescereEBuono
+ */
+function deltaVsPrecedente(attuale, precedente, crescereEBuono) {
+  if (precedente === null || precedente === undefined) return '';   // mai fingere uno zero
+  const diff = attuale - precedente;
+  if (Math.abs(diff) < 0.005) return '<div class="delta">invariato</div>';
+  const cresce = diff > 0;
+  const classe = (cresce === crescereEBuono) ? 'up' : 'dn';
+  // In percentuale solo se il periodo precedente non era zero, altrimenti e' un
+  // aumento infinito che non dice nulla.
+  const testo = Math.abs(precedente) > 0.005
+    ? Math.abs(diff / precedente * 100).toFixed(0) + '%'
+    : '€' + fmtDec(Math.abs(diff));
+  return `<div class="delta ${classe}">${cresce ? '↑' : '↓'} ${testo} vs periodo prec.</div>`;
+}
+
+function renderPanoramica() {
+  const tot = calcolaTotali(currentSpese, currentEntrate);
+  const totSpese = tot.spese, totUscite = tot.uscite, totEntrate = tot.entrate, risparmio = tot.risparmio;
+  const prec = totaliPrec;
   const totConti   = CONTI
     .filter(c => c.tipo !== 'Investimento' && c.tipo !== 'Piano pensione')
     .reduce((s,c) => s + (c.saldo || 0), 0);
@@ -2222,19 +2313,23 @@ function renderPanoramica(totInv) {
     <div class="metric">
       <div class="label">Entrate ${MONTHS_SHORT[currentMonth-1]}</div>
       <div class="value" style="color:var(--green)">€${fmtDec(totEntrate)}</div>
+      ${deltaVsPrecedente(totEntrate, prec && prec.entrate, true)}
     </div>
     <div class="metric">
       <div class="label">Spese ${MONTHS_SHORT[currentMonth-1]}</div>
       <div class="value" style="color:var(--red)">€${fmtDec(totSpese)}</div>
+      ${deltaVsPrecedente(totSpese, prec && prec.spese, false)}
     </div>
     <div class="metric">
       <div class="label">Uscite ${MONTHS_SHORT[currentMonth-1]}</div>
       <div class="value" style="color:var(--red)">€${fmtDec(totUscite)}</div>
+      ${deltaVsPrecedente(totUscite, prec && prec.uscite, false)}
     </div>
     <div class="metric">
       <div class="label">Risparmio ${MONTHS_SHORT[currentMonth-1]}</div>
       <div class="value" style="color:${risparmio>=0?'var(--green)':'var(--red)'}">€${fmtDec(Math.abs(risparmio))}</div>
       <div class="delta ${risparmio>=0?'up':'dn'}">${risparmio>=0?'avanzo':'deficit'}</div>
+      ${deltaVsPrecedente(risparmio, prec && prec.risparmio, true)}
     </div>`;
 
   renderDonutChart();

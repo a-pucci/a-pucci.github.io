@@ -40,14 +40,15 @@ salvaCache(payload);
 let c = leggiCache();
 verifica('payload riletto integro', c.data, payload);
 verifica('periodo registrato', c.periodo, '2026-5-1');
-verifica('schema registrato', c.v, 1);
+// legato alla costante: lo schema cambia ogni volta che cambia la forma del payload
+verifica('schema registrato', c.v, Number(h.costante(h.src, '_CACHE_SCHEMA')));
 verifica('timestamp presente', typeof c.salvatoIl, 'number');
 deposito = {};
 verifica('cache assente -> null', leggiCache(), null);
 
 sezione('cache non fidata');
 periodo(2026, 5, 1); salvaCache(payload);
-deposito[CHIAVE] = JSON.stringify({ ...JSON.parse(deposito[CHIAVE]), v: 99 });
+deposito[CHIAVE] = JSON.stringify({ ...JSON.parse(deposito[CHIAVE]), v: 999 });
 verifica('schema diverso -> scartata', leggiCache(), null);
 verifica('  e rimossa', CHIAVE in deposito, false);
 

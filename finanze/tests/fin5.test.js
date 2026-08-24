@@ -50,7 +50,9 @@ verifica('azione registrata in doGet',
 // ── periodo, lato client ──────────────────────────────────────────────
 sezione('periodo');
 eval([h.estrai(h.src, 'localISO'), h.estrai(h.src, 'getMonthRange'),
-      h.estrai(h.src, 'periodoCorrente'), h.estrai(h.src, 'filtraPeriodo')].join('\n'));
+      h.estrai(h.src, 'shiftMonth'), h.estrai(h.src, 'periodoPer'),
+      h.estrai(h.src, 'periodoCorrente'), h.estrai(h.src, 'periodoPrecedente'),
+      h.estrai(h.src, 'filtraPeriodo')].join('\n'));
 
 const contesto = (y, m, sd) => {
   global.currentYear = y; global.currentMonth = m; global.monthStartDay = sd;
@@ -58,7 +60,9 @@ const contesto = (y, m, sd) => {
 };
 
 let p = contesto(2026, 5, 1);
-verifica('mese solare: un mese, nessun ritaglio', [p.mesi, p.fromISO], [[{ year: 2026, month: 5 }], null]);
+// il range c'e' anche col mese solare: separa i due periodi dentro lo stesso payload
+verifica('mese solare: un mese solo', p.mesi, [{ year: 2026, month: 5 }]);
+verifica('  con il proprio range', [p.fromISO, p.toISO], ['2026-05-01', '2026-05-31']);
 
 p = contesto(2026, 5, 16);
 verifica('mese contabile: due mesi solari', p.mesi, [{ year: 2026, month: 5 }, { year: 2026, month: 6 }]);
@@ -74,7 +78,8 @@ const righe = [
 ];
 verifica('filtraPeriodo include gli estremi',
   filtraPeriodo(righe, contesto(2026, 5, 16)).map(r => r.id), ['inizio', 'fine']);
-verifica('senza ritaglio passa tutto', filtraPeriodo(righe, contesto(2026, 5, 1)).length, 4);
+verifica('il ritaglio esclude cio che sta fuori dal periodo',
+  filtraPeriodo(righe, contesto(2026, 5, 1)).map(r => r.id), ['prima', 'inizio']);
 
 // ── query costruita dal client ────────────────────────────────────────
 sezione('query');
@@ -84,16 +89,22 @@ global.apiGet = async q => { query = q; return { ok: true, data: { spese: [] } }
 eval(h.estrai(h.src, 'fetchBootstrap'));
 
 (async () => {
+  // include anche i mesi del periodo precedente, per il confronto in Panoramica
   contesto(2026, 5, 16);
   await fetchBootstrap();
-  verifica('mesi risolti dal client',            query.mesi, '2026-5,2026-6');
+  verifica('mesi risolti dal client',            query.mesi, '2026-5,2026-6,2026-4');
+  verifica('  nessun mese ripetuto',             new Set(query.mesi.split(',')).size, 3);
   verifica('anni investimenti: corrente e prima', query.invAnni, '2026,2025');
   verifica('trend ancorato a oggi',              query.annoTrend, 2026);
   verifica('azione corretta',                    query.action, 'getBootstrap');
 
   contesto(2026, 5, 1);
   await fetchBootstrap();
-  verifica('mese solare: un mese nella query', query.mesi, '2026-5');
+  verifica('mese solare: corrente e precedente', query.mesi, '2026-5,2026-4');
+
+  contesto(2026, 1, 1);
+  await fetchBootstrap();
+  verifica('a gennaio il precedente e dell anno prima', query.mesi, '2026-1,2025-12');
 
   global.apiGet = async () => ({ error: 'Azione non riconosciuta: getBootstrap' });
   verifica('backend non aggiornato -> null, si ricade sulle granulari',
@@ -113,8 +124,14 @@ eval(h.estrai(h.src, 'fetchBootstrap'));
   ['loadSpese', 'loadEntrate', 'loadInvestimenti'].forEach(f =>
     verifica(`${f} accetta dati preesistenti`, new RegExp(`function ${f}\\(pre[,)]`).test(h.src), true));
   // prima del refactor il calcolo del range era ripetuto in loadSpese e loadEntrate
-  verifica('il calcolo del periodo vive in un solo punto',
-    (h.src.match(/getMonthRange\(currentYear, currentMonth, monthStartDay\)/g) || []).length, 1);
+  verifica('nessun loader calcola il range da se',
+    ['loadSpese', 'loadEntrate', 'loadPeriodoPrecedente']
+      .some(f => /getMonthRange\(/.test(h.estrai(h.src, f))), false);
+  verifica('il range si calcola solo in periodoPer',
+    /getMonthRange\(year, month, monthStartDay\)/.test(h.estrai(h.src, 'periodoPer')), true);
+  verifica('  e corrente e precedente ne derivano entrambi',
+    [/periodoPer\(currentYear, currentMonth\)/.test(h.estrai(h.src, 'periodoCorrente')),
+     /periodoPer\(p\.year, p\.month\)/.test(h.estrai(h.src, 'periodoPrecedente'))], [true, true]);
 
   h.fine();
 })();
