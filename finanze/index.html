@@ -1171,6 +1171,32 @@ function filtraPeriodo(rows, p) {
   return rows.filter(r => r.data >= p.fromISO && r.data <= p.toISO);
 }
 
+// Periodo contabile a cui appartiene una data. Con giorno di inizio > 1 non
+// coincide col mese solare: il 5 maggio, con inizio il 16, sta nel periodo di
+// aprile.
+function periodoDi(dataISO) {
+  const [y, m, d] = String(dataISO).split('-').map(Number);
+  if (!y || !m || !d) return { year: currentYear, month: currentMonth };
+  if (monthStartDay <= 1) return { year: y, month: m };
+  return d >= monthStartDay ? { year: y, month: m } : shiftMonth(y, m, -1);
+}
+
+// Un movimento salvato fuori dal periodo mostrato non compare in lista: senza
+// avviso sembra che il salvataggio sia fallito.
+function avvisaSePeriodoDiverso(dataISO) {
+  const p = periodoDi(dataISO);
+  if (p.year === currentYear && p.month === currentMonth) return false;
+  toast('Salvato in ' + monthRangeLabel(p.year, p.month, monthStartDay), {
+    azione: 'Vai',
+    durata: 7000,
+    onAzione: () => {
+      currentYear = p.year; currentMonth = p.month;
+      loadPeriodo();
+    }
+  });
+  return true;
+}
+
 async function loadSpese(pre) {
   try {
     updateMonthLabel();
@@ -2013,6 +2039,7 @@ async function addSpesa() {
           }, 1800);
         }
         await loadSpese();
+        avvisaSePeriodoDiverso(data);
       }
     } else { showMsg('spesa-err', res.error || 'Errore'); }
   } catch(err) { showMsg('spesa-err', err.message); }
@@ -2096,7 +2123,9 @@ async function addEntrata() {
         const aEl = document.getElementById('e-amount'); if (aEl) aEl.value = '';
         const nEl = document.getElementById('e-note'); if (nEl) nEl.value = '';
         const dEl = document.getElementById('e-date'); if (dEl) dEl.value = todayISO;
-        showMsg('entrata-ok'); await loadEntrate();
+        await loadEntrate();
+        // L'avviso di periodo dice gia' che e' stata salvata: evita due notifiche.
+        if (!avvisaSePeriodoDiverso(data)) showMsg('entrata-ok');
       }
     } else { showMsg('entrata-err', res.error||'Errore'); }
   } catch(err) { showMsg('entrata-err', err.message); }
