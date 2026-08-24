@@ -289,6 +289,18 @@
   .btn-secondary:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
 
   /* ── MESSAGES ── */
+  /* Durante il caricamento di un periodo i numeri del periodo precedente restano
+     a schermo sotto l'etichetta di quello nuovo. La sfocatura li rende illeggibili
+     senza far saltare il layout, cosa che uno scheletro farebbe. */
+  .in-caricamento { filter: blur(4px); opacity: .45; pointer-events: none;
+    transition: filter .15s, opacity .15s; }
+  @media (prefers-reduced-motion: reduce) { .in-caricamento { transition: none; } }
+
+  /* Operazioni in coda offline: senza contatore non si sa se e quante siano. */
+  #coda-badge { display: none; align-items: center; gap: 4px; margin-left: 6px;
+    padding: 1px 7px; border-radius: 999px; background: var(--amber);
+    color: #0f0f0f; font-size: 0.7rem; font-weight: 600; font-family: var(--mono); }
+
   /* Notifiche ancorate in basso: i messaggi dentro le card finivano fuori schermo
      su mobile, e l'azione di annullamento deve restare raggiungibile col pollice. */
   #toast-wrap { position: fixed; left: 0; right: 0; z-index: 1000;
@@ -419,6 +431,7 @@
     <div class="status-pill">
       <div class="dot loading" id="sdot"></div>
       <span id="stxt">connessione...</span>
+      <span id="coda-badge" title="Operazioni in attesa di sincronizzazione"></span>
       <button id="retry-btn" onclick="reloadAll()" style="display:none;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);cursor:pointer;font-size:0.72rem;padding:2px 8px;margin-left:6px">Riprova</button>
       <button onclick="reloadAll()" style="background:none;border:none;cursor:pointer;color:var(--muted);margin-left:4px;font-size:14px;padding:0" title="Ricarica"><i class="ti ti-refresh"></i></button>
       <button class="privacy-btn" onclick="togglePrivate()" id="privacy-btn" title="Modalità privata"><i class="ti ti-eye" id="privacy-icon"></i></button>
@@ -545,7 +558,7 @@
 
     <div class="card">
       <div class="card-title">Distribuzione spese</div>
-      <div class="distribuzione-wrap">
+      <div class="distribuzione-wrap" id="spesa-chart-wrap">
         <div style="position:relative;width:180px;height:180px;flex-shrink:0">
           <canvas id="spesaChart" role="img" aria-label="Distribuzione spese">Caricamento</canvas>
         </div>
@@ -785,6 +798,18 @@ async function _deletePendingOp(id) {
   });
 }
 
+// Le operazioni accodate erano invisibili: non si sapeva se ce ne fossero, quante,
+// ne' quando sparivano.
+async function aggiornaBadgeCoda() {
+  const el = document.getElementById('coda-badge');
+  if (!el) return 0;
+  let n = 0;
+  try { n = (await _getAllPendingOps()).length; } catch(e) { /* IndexedDB negato */ }
+  el.textContent = n === 1 ? '1 in coda' : n + ' in coda';
+  el.style.display = n > 0 ? 'inline-flex' : 'none';
+  return n;
+}
+
 async function _flushPendingOps() {
   const ops = await _getAllPendingOps();
   if (ops.length === 0) return;
@@ -793,6 +818,7 @@ async function _flushPendingOps() {
       const res = await _fetchJson(API_URL, { method: 'POST', body: JSON.stringify(op.body) });
       if (res.ok) await _deletePendingOp(op.id);
     } catch { /* operazione non consumata: riprova alla prossima apertura */ }
+    await aggiornaBadgeCoda();   // il contatore cala mano a mano
   }
   const remaining = await _getAllPendingOps();
   if (remaining.length === 0) _showSyncBanner();
@@ -842,6 +868,7 @@ async function apiPost(body) {
       const reg = await navigator.serviceWorker.ready;
       if (reg.sync) await reg.sync.register('sync-ops');
     }
+    await aggiornaBadgeCoda();
     return { ok: true, queued: true };
   }
   return _fetchJson(API_URL, { method: 'POST', body: JSON.stringify(body) });
@@ -928,6 +955,7 @@ function cachePerPeriodoCorrente(c) {
 
 async function reloadAll() {
   const t0 = performance.now();
+  aggiornaBadgeCoda();   // chi tocca "ricarica" si aspetta che si aggiorni tutto
 
   // 1. Render immediato dall'ultimo stato noto, se c'è.
   let daCache = false;
@@ -1146,11 +1174,34 @@ function renderContiList() {
 }
 
 // ── SPESE ────────────────────────────────────────────────────
+// Viste che mostrano numeri del periodo: durante un cambio mese vanno oscurate,
+// altrimenti si leggono i dati del periodo precedente sotto l'etichetta di quello
+// nuovo. Il form di aggiunta resta fuori: deve restare usabile.
+const _VISTE_PERIODO = '.mobile-summary, #spese-metrics, #view-cat, #view-subcat, ' +
+                       '#view-list, #spesa-chart-wrap, #entrate-metrics, #entrate-list';
+
+function segnalaCaricamento(attivo) {
+  document.querySelectorAll(_VISTE_PERIODO)
+    .forEach(el => el.classList.toggle('in-caricamento', attivo));
+}
+
+// Clic ripetuti sulle frecce lanciano piu' caricamenti insieme: senza un
+// contrassegno, una risposta lenta di un mese precedente puo' arrivare dopo quella
+// del mese giusto e sovrascriverla.
+let _tokenPeriodo = 0;
+const periodoScaduto = token => token !== undefined && token !== _tokenPeriodo;
+
 // Carica spese ed entrate dello stesso periodo. Entrambe rieseguono renderEntrate()
 // al termine, quindi l'ultima a finire rende con i due dataset già aggiornati,
 // qualunque sia l'ordine di arrivo.
 async function loadPeriodo(pre) {
-  await Promise.all([loadSpese(pre), loadEntrate(pre)]);
+  const token = ++_tokenPeriodo;
+  if (!pre) segnalaCaricamento(true);   // dalla cache il render e' immediato
+  try {
+    await Promise.all([loadSpese(pre, token), loadEntrate(pre, token)]);
+  } finally {
+    if (token === _tokenPeriodo) segnalaCaricamento(false);
+  }
 }
 
 // Mesi solari coperti dal periodo contabile corrente, più il range ISO per
@@ -1197,7 +1248,7 @@ function avvisaSePeriodoDiverso(dataISO) {
   return true;
 }
 
-async function loadSpese(pre) {
+async function loadSpese(pre, token) {
   try {
     updateMonthLabel();
     const p = periodoCorrente();
@@ -1207,6 +1258,7 @@ async function loadSpese(pre) {
     } else {
       const res = await Promise.all(p.mesi.map(m =>
         apiGet({action:'getSpese', year:m.year, month:m.month})));
+      if (periodoScaduto(token)) return;   // nel frattempo il periodo e' cambiato
       if (!res[0].ok) throw new Error(res[0].error);
       rows = filtraPeriodo(res.filter(r => r.ok).flatMap(r => r.data), p);
     }
@@ -2083,7 +2135,7 @@ function renderEntrate() {
   }).join('');
 }
 
-async function loadEntrate(pre) {
+async function loadEntrate(pre, token) {
   try {
     updateEntratMonthLabel();
     const p = periodoCorrente();
@@ -2093,6 +2145,7 @@ async function loadEntrate(pre) {
     } else {
       const res = await Promise.all(p.mesi.map(m =>
         apiGet({action:'getEntrate', year:m.year, month:m.month})));
+      if (periodoScaduto(token)) return;   // nel frattempo il periodo e' cambiato
       if (!res[0].ok) return;
       rows = filtraPeriodo(res.filter(r => r.ok).flatMap(r => r.data), p);
     }
@@ -2612,7 +2665,7 @@ function _showSyncBanner() {
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data && e.data.type === 'sync-complete') _showSyncBanner();
+    if (e.data && e.data.type === 'sync-complete') { _showSyncBanner(); aggiornaBadgeCoda(); }
   });
 }
 
@@ -2629,6 +2682,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   updateEntratMonthLabel();
   renderRecenti();
+  aggiornaBadgeCoda();   // possono esserci operazioni rimaste da una sessione offline
   // Invio salva: su mobile la tastiera copre il pulsante, da desktop evita il giro
   // col mouse. Solo dai campi di testo, non dalle select dove Invio ha altro senso.
   [['q-amount', addSpesa], ['q-note', addSpesa], ['e-amount', addEntrata]].forEach(([id, azione]) => {

@@ -109,8 +109,9 @@ eval(h.estrai(h.src, 'fetchBootstrap'));
   verifica('idrata passa i dati a tutti i loader',
     /loadCategorie\(pre\)[\s\S]*loadPeriodo\(pre\)[\s\S]*loadInvestimenti\(pre\)/.test(h.estrai(h.src, 'idrata')), true);
   verifica('changeMonth resta mirato', /fetchBootstrap/.test(h.estrai(h.src, 'changeMonth')), false);
+  // `pre` primo parametro: gli altri argomenti (es. il token di FIN-15) non contano
   ['loadSpese', 'loadEntrate', 'loadInvestimenti'].forEach(f =>
-    verifica(`${f} accetta dati preesistenti`, new RegExp(`function ${f}\\(pre\\)`).test(h.src), true));
+    verifica(`${f} accetta dati preesistenti`, new RegExp(`function ${f}\\(pre[,)]`).test(h.src), true));
   // prima del refactor il calcolo del range era ripetuto in loadSpese e loadEntrate
   verifica('il calcolo del periodo vive in un solo punto',
     (h.src.match(/getMonthRange\(currentYear, currentMonth, monthStartDay\)/g) || []).length, 1);
