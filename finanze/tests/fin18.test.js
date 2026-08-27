@@ -8,7 +8,6 @@ const { verifica, sezione } = h;
 
 global.MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 global.INV_CAT = 'Investimenti';
-global.GIROCONTO_SUB = 'Giroconto';
 
 eval([h.estrai(h.src, 'localISO'), h.estrai(h.src, 'getMonthRange'),
       h.estrai(h.src, 'shiftMonth'), h.estrai(h.src, 'periodoPer'),
@@ -61,16 +60,14 @@ sezione('totali');
 const spese = [
   { categoria: 'Casa',         sottocategoria: 'Bollette',  importo: 300 },
   { categoria: 'Investimenti', sottocategoria: 'Risparmi',  importo: 500 },
-  { categoria: 'Altro',        sottocategoria: 'Giroconto', importo: 999 },
 ];
 const entrate = [
   { tipo: 'Stipendio', importo: 2000 },
-  { tipo: 'Giroconto', importo: 999 },
 ];
 const t = calcolaTotali(spese, entrate);
-verifica('spese: senza investimenti ne giroconti', t.spese, 300);
-verifica('uscite: investimenti dentro, giroconti fuori', t.uscite, 800);
-verifica('entrate: senza giroconti', t.entrate, 2000);
+verifica('spese: senza investimenti', t.spese, 300);
+verifica('uscite: investimenti dentro', t.uscite, 800);
+verifica('entrate sommate', t.entrate, 2000);
 verifica('risparmio = entrate - spese correnti', t.risparmio, 1700);
 verifica('nessun movimento -> tutti zero', calcolaTotali([], []),
   { spese: 0, uscite: 0, entrate: 0, risparmio: 0 });

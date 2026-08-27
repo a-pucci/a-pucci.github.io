@@ -34,7 +34,6 @@ const elementi = {};
 global.document = { getElementById: id => (elementi[id] = elementi[id] || { innerHTML: '' }) };
 global.MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 global.INV_CAT = 'Investimenti';
-global.GIROCONTO_SUB = 'Giroconto';
 eval(h.estrai(h.src, 'fmtDec') + '\n' + h.estrai(h.src, 'renderEntrate'));
 
 function metriche(spese, entrate, mese) {
@@ -54,17 +53,15 @@ const speseMaggio = [
   { categoria: 'Casa',         sottocategoria: 'Bollette',  importo: 300 },
   { categoria: 'Cibo',         sottocategoria: 'Generale',  importo: 200 },
   { categoria: 'Investimenti', sottocategoria: 'Risparmi',  importo: 500 },  // esclusa
-  { categoria: 'Altro',        sottocategoria: 'Giroconto', importo: 999 },  // esclusa
 ];
 const entrateMaggio = [
   { tipo: 'Stipendio', importo: 2000, data: '2026-05-27' },
-  { tipo: 'Giroconto', importo: 999,  data: '2026-05-10' },   // esclusa
 ];
 
 // NB: in it-IT il CLDR usa minimumGroupingDigits=2, quindi i numeri a 4 cifre non
 // hanno il punto delle migliaia: 2000,00 ma 10.000,00. Vale anche nei browser.
-verifica('spese escludono investimenti e giroconti', metriche(speseMaggio, entrateMaggio, 5).spese, '500,00');
-verifica('entrate escludono i giroconti',            metriche(speseMaggio, entrateMaggio, 5).entrate, '2000,00');
+verifica('spese escludono gli investimenti', metriche(speseMaggio, entrateMaggio, 5).spese, '500,00');
+verifica('entrate sommate',                          metriche(speseMaggio, entrateMaggio, 5).entrate, '2000,00');
 verifica('risparmio = entrate - spese',              metriche(speseMaggio, entrateMaggio, 5).risparmio, '1500,00');
 verifica('avanzo segnalato come tale',               metriche(speseMaggio, entrateMaggio, 5).segno, 'avanzo');
 verifica('raggruppamento migliaia da 5 cifre in su',

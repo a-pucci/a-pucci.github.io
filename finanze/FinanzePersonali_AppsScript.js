@@ -1061,8 +1061,7 @@ function deleteGiroconto_(body) {
   const data  = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(body.id)) {
-      sheet.deleteRow(i + 1);
-      SpreadsheetApp.flush();
+      eliminaRigaRobusto_(sheet, i, body.id, data);
       return { ok: true };
     }
   }
@@ -1141,12 +1140,29 @@ function deleteRow_(body) {
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(body.id)) {
-      sheet.deleteRow(i + 1);
-      SpreadsheetApp.flush();   // senza, la cancellazione poteva non persistere
+      eliminaRigaRobusto_(sheet, i, body.id, data);
       return { ok: true };
     }
   }
   return { error: 'Riga non trovata' };
+}
+
+// Su alcuni fogli sheet.deleteRow rispondeva ma non persisteva (mentre setValues
+// si'). Qui si prova deleteRow; se la riga sopravvive, la si elimina riscrivendo
+// il foglio senza quella riga via setValues, che e' affidabile.
+function eliminaRigaRobusto_(sheet, i, id, data) {
+  sheet.deleteRow(i + 1);
+  SpreadsheetApp.flush();
+  const dopo = sheet.getDataRange().getValues();
+  const ancora = dopo.some((r, idx) => idx > 0 && String(r[0]) === String(id));
+  if (!ancora) return;
+  // fallback: ricompatta senza la riga, svuotando la coda
+  const cols = data[0].length;
+  const tenute = data.filter((r, idx) => idx === 0 || String(r[0]) !== String(id));
+  sheet.getRange(1, 1, tenute.length, cols).setValues(tenute);
+  const avanzo = data.length - tenute.length;
+  if (avanzo > 0) sheet.getRange(tenute.length + 1, 1, avanzo, cols).clearContent();
+  SpreadsheetApp.flush();
 }
 
 // ── Helpers lettura ──────────────────────────────────────────

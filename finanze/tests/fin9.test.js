@@ -12,12 +12,13 @@ function nuovoFoglio() {
   return { righe, appendRow: r => righe.push(r),
     getDataRange: () => ({ getValues: () => righe }),
     deleteRow: i => righe.splice(i - 1, 1),
-    getLastRow: () => righe.length, getRange: () => ({ setValues: () => {} }), setFrozenRows: () => {} };
+    getLastRow: () => righe.length, getRange: () => ({ setValues: () => {}, clearContent: () => {} }), setFrozenRows: () => {} };
 }
 global.generateId_ = () => 'gid' + (foglio.righe.length);
 global.parseNum_ = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 global.getGirocontiSheet_ = () => foglio;
-eval([h.estrai(h.gas, 'getGiroconti_'), h.estrai(h.gas, 'addGiroconto_'), h.estrai(h.gas, 'deleteGiroconto_')].join('\n'));
+global.SpreadsheetApp = { flush: () => {} };
+eval([h.estrai(h.gas, 'getGiroconti_'), h.estrai(h.gas, 'addGiroconto_'), h.estrai(h.gas, 'eliminaRigaRobusto_'), h.estrai(h.gas, 'deleteGiroconto_')].join('\n'));
 
 foglio = nuovoFoglio();
 verifica('conti mancanti -> errore', !!addGiroconto_({ importo: 10, contoDa: '', contoA: 'B' }).error, true);
@@ -119,6 +120,10 @@ async function provaSalva(imp, da, a) {
   verifica('closeEditModal resta alias', /function closeEditModal\(daHistory\) \{ chiudiModaleAttiva\(daHistory\); \}/.test(h.src), true);
   verifica('Esc chiude la modale attiva', /chiudiModaleAttiva\(\)/.test(h.estrai(h.src, '_modaleKeydown')), true);
   verifica('apriGiroconto usa il sistema condiviso', /apriModale\(modal\)/.test(h.estrai(h.src, 'apriGiroconto')), true);
+
+  sezione('FIN-11: il filtro per stringa e sparito');
+  verifica('GIROCONTO_SUB rimosso dal frontend', /GIROCONTO_SUB/.test(h.src), false);
+  verifica('deleteRow_ usa l eliminazione robusta', /eliminaRigaRobusto_/.test(h.estrai(h.gas, 'deleteRow_')), true);
 
   h.fine();
 })();
