@@ -1062,6 +1062,7 @@ function deleteGiroconto_(body) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(body.id)) {
       sheet.deleteRow(i + 1);
+      SpreadsheetApp.flush();
       return { ok: true };
     }
   }
@@ -1141,6 +1142,7 @@ function deleteRow_(body) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(body.id)) {
       sheet.deleteRow(i + 1);
+      SpreadsheetApp.flush();   // senza, la cancellazione poteva non persistere
       return { ok: true };
     }
   }
