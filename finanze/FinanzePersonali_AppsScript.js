@@ -39,7 +39,7 @@ const CONFIG = {
 // ── Struttura colonne ────────────────────────────────────────
 const COLUMNS = {
   Categorie: ['Categoria', 'Sottocategoria', 'Colore', 'Icona', 'Attiva'],
-  Conti: ['ID', 'Nome', 'Tipo', 'Piattaforma', 'IBAN_o_Numero', 'Valuta', 'Note', 'Attivo', 'Saldo'],
+  Conti: ['ID', 'Nome', 'Tipo', 'Piattaforma', 'IBAN_o_Numero', 'Valuta', 'Note', 'Attivo', 'Saldo', 'Saldo_Iniziale', 'Data_Saldo_Iniziale'],
   Spese: ['ID', 'Data', 'Importo', 'Categoria', 'Sottocategoria', 'Nota', 'Conto', 'Metodo_Pagamento'],
   Entrate: ['ID', 'Data', 'Importo', 'Tipo', 'Nota', 'Conto'],
   Investimenti: ['Data_Snapshot', 'Piattaforma', 'Conto', 'Strumento', 'Valore_Attuale', 'Investito', 'Rendimento_EUR', 'Rendimento_PCT'],
@@ -492,7 +492,9 @@ function getCategorieEntrate_() {
  * Legge tutti i conti attivi con saldo corrente.
  * @returns {{ ok: boolean, data: Array }}
  */
-function getConti_() {
+// Anagrafica dei conti: campi che cambiano di rado. Cachata (FIN-7). Il saldo
+// derivato NON sta qui perche' dipende dai movimenti; lo attacca getConti_.
+function getContiAnagrafica_() {
   return cached_('conti', function() {
     const data = readSheet_('ID_CONTI');
     const conti = data
@@ -500,10 +502,66 @@ function getConti_() {
       .map(r => ({
         id: r[0], nome: r[1], tipo: r[2],
         piattaforma: r[3], valuta: r[5], note: r[6],
-        saldo: parseNum_(r[8])
+        saldoIniziale: parseNum_(r[9]),
+        dataSaldoIniziale: r[10] ? isoDay_(r[10]) : ''
       }));
     return { ok: true, data: conti };
   });
+}
+
+// Il saldo di un conto corrente e' DERIVATO: saldo iniziale + entrate - spese +
+// trasferimenti in - trasferimenti out, sui movimenti successivi alla data del
+// saldo iniziale. Cosi' modifiche, eliminazioni e import si riflettono sempre,
+// cosa che il vecchio saldo mutabile non faceva. Mai cachato: sempre ricalcolato.
+function calcolaSaldiConti_(conti) {
+  const correnti = conti.filter(c => c.tipo === 'Conto corrente');
+  correnti.forEach(c => { c.saldo = parseNum_(c.saldoIniziale); });
+  if (!correnti.length) return conti;
+
+  // Anni da leggere: dal saldo iniziale piu' vecchio fino a oggi.
+  const anni = { };
+  anni[CONFIG.YEAR] = true;
+  correnti.forEach(c => { const y = (c.dataSaldoIniziale || '').slice(0, 4); if (/^\d{4}$/.test(y)) anni[y] = true; });
+  const annoMin = Math.min.apply(null, Object.keys(anni).map(Number));
+
+  const byNome = {};
+  correnti.forEach(c => { byNome[c.nome] = c; });
+  const oltreInizio = (c, dataMov) => isoDay_(dataMov) > (c.dataSaldoIniziale || '0000-00-00');
+
+  for (let y = annoMin; y <= CONFIG.YEAR; y++) {
+    safe_(function() {
+      readSheetByName_('Spese_' + y).forEach(function(r) {
+        const c = byNome[r[6]];
+        if (c && oltreInizio(c, r[1])) c.saldo -= parseNum_(r[2]);
+      });
+    }, null);
+    safe_(function() {
+      readSheetByName_('Entrate_' + y).forEach(function(r) {
+        const c = byNome[r[5]];
+        if (c && oltreInizio(c, r[1])) c.saldo += parseNum_(r[2]);
+      });
+    }, null);
+  }
+
+  safe_(function() { return getGiroconti_().data; }, []).forEach(function(g) {
+    const da = byNome[g.contoDa], a = byNome[g.contoA];
+    if (da && oltreInizio(da, g.data)) da.saldo -= g.importo;
+    if (a  && oltreInizio(a,  g.data)) a.saldo  += g.importo;
+  });
+  return conti;
+}
+
+function getConti_() {
+  const conti = getContiAnagrafica_().data;
+  calcolaSaldiConti_(conti);
+  return { ok: true, data: conti };
+}
+
+// Formatta una cella data (Date o stringa ISO) come YYYY-MM-DD nel fuso dello
+// script, cosi' il confronto col saldo iniziale non slitta per via di UTC.
+function isoDay_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v).slice(0, 10);
 }
 
 /**
@@ -816,8 +874,7 @@ function addSpesa_(body) {
     body.metodo         || '',
   ];
   appendRow_('Spese_' + year, row);
-  if (body.conto) updateSaldoConto_(body.conto, -(parseFloat(body.importo) || 0));
-  return { ok: true, id: row[0] };
+  return { ok: true, id: row[0] };   // il saldo e' derivato (FIN-10): niente da aggiornare
 }
 
 /**
@@ -836,8 +893,7 @@ function addEntrata_(body) {
     body.conto || '',
   ];
   appendRow_('Entrate_' + year, row);
-  if (body.conto) updateSaldoConto_(body.conto, parseFloat(body.importo) || 0);
-  return { ok: true, id: row[0] };
+  return { ok: true, id: row[0] };   // saldo derivato (FIN-10)
 }
 
 /**
@@ -902,6 +958,39 @@ function addConto_(body) {
   ]);
   invalidaAnagrafiche_();
   return { ok: true };
+}
+
+/**
+ * Imposta i saldi iniziali dei conti correnti (FIN-10). Da eseguire una volta
+ * dallo Script Editor dopo il deploy. Aggiunge le colonne se mancanti e scrive
+ * i valori. Modifica i numeri qui sotto se cambiano.
+ */
+function setupSaldiIniziali() {
+  const SALDI = {
+    'Intesa Sanpaolo': { saldo: 790.99,  data: '2026-03-31' },
+    'Trade Republic':  { saldo: 6274.68, data: '2026-05-31' },
+  };
+  const props = PropertiesService.getScriptProperties();
+  const ss    = openById_(props.getProperty('ID_CONTI'));
+  const sheet = ss.getSheets()[0];
+  const data  = sheet.getDataRange().getValues();
+
+  // Header colonne J (10) e K (11) se assenti
+  if (data[0][9]  !== 'Saldo_Iniziale')      sheet.getRange(1, 10).setValue('Saldo_Iniziale');
+  if (data[0][10] !== 'Data_Saldo_Iniziale') sheet.getRange(1, 11).setValue('Data_Saldo_Iniziale');
+
+  let scritti = 0;
+  for (let i = 1; i < data.length; i++) {
+    const nome = data[i][1], tipo = data[i][2];
+    if (tipo !== 'Conto corrente') continue;
+    const v = SALDI[nome];
+    if (!v) continue;
+    sheet.getRange(i + 1, 10).setValue(v.saldo);
+    sheet.getRange(i + 1, 11).setValue(v.data);
+    scritti++;
+  }
+  invalidaAnagrafiche_();
+  Logger.log('Saldi iniziali impostati su ' + scritti + ' conti correnti.');
 }
 
 // ── Giroconti (FIN-9) ─────────────────────────────────────────
@@ -1056,30 +1145,6 @@ function deleteRow_(body) {
     }
   }
   return { error: 'Riga non trovata' };
-}
-
-/**
- * Aggiorna il saldo del conto specificato sommando il delta indicato.
- * Usato internamente da addSpesa_ (delta negativo) e addEntrata_ (delta positivo).
- * @param {string} nomeConto - Nome del conto (colonna Nome nel foglio Conti)
- * @param {number} delta - Importo da sommare al saldo corrente (negativo per spese)
- */
-function updateSaldoConto_(nomeConto, delta) {
-  if (!nomeConto || delta == null || isNaN(delta)) return;
-  const props = PropertiesService.getScriptProperties();
-  const id    = props.getProperty('ID_CONTI');
-  if (!id) return;
-  const ss    = openById_(id);
-  const sheet = ss.getSheets()[0];
-  const data  = sheet.getDataRange().getValues();
-  invalidaAnagrafiche_();   // il saldo cambia: la copia in cache non vale piu'
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][1] === nomeConto) {
-      const current = parseNum_(data[i][8]);
-      sheet.getRange(i + 1, 9).setValue(current + delta);
-      return;
-    }
-  }
 }
 
 // ── Helpers lettura ──────────────────────────────────────────

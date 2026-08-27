@@ -66,14 +66,15 @@ serviceRotto = false;
 sezione('punti di lettura e scrittura');
 verifica('getCategorie_ passa dalla cache', /cached_\('cat_uscite'/.test(h.estrai(h.gas, 'getCategorie_')), true);
 verifica('getCategorieEntrate_ passa dalla cache', /cached_\('cat_entrate'/.test(h.estrai(h.gas, 'getCategorieEntrate_')), true);
-verifica('getConti_ passa dalla cache', /cached_\('conti'/.test(h.estrai(h.gas, 'getConti_')), true);
+verifica('anagrafica conti cachata', /cached_\('conti'/.test(h.estrai(h.gas, 'getContiAnagrafica_')), true);
+verifica('getConti_ deriva il saldo, non cacha', /calcolaSaldiConti_/.test(h.estrai(h.gas, 'getConti_')), true);
 verifica('addCategoria_ invalida', /invalidaAnagrafiche_\(\)/.test(h.estrai(h.gas, 'addCategoria_')), true);
 verifica('addConto_ invalida', /invalidaAnagrafiche_\(\)/.test(h.estrai(h.gas, 'addConto_')), true);
-verifica('updateSaldoConto_ invalida', /invalidaAnagrafiche_\(\)/.test(h.estrai(h.gas, 'updateSaldoConto_')), true);
+verifica('updateSaldoConto_ rimosso (saldo derivato in FIN-10)', /function updateSaldoConto_/.test(h.gas), false);
 
 // Le funzioni di setup creano i fogli da zero: la cache non esiste ancora e
 // vengono eseguite a mano una volta sola.
-const esenti = ['addCategoria_', 'addConto_', 'updateSaldoConto_',
+const esenti = ['addCategoria_', 'addConto_', 'setupSaldiIniziali',
                 'setupCompleto', 'setupCategorie_', 'setupConti_', 'setupSheet_', 'setupBudget_'];
 const sospette = [...h.gas.matchAll(/function (\w+)\s*\(/g)].map(m => m[1]).filter(nome => {
   if (esenti.includes(nome)) return false;
