@@ -16,6 +16,7 @@ const creaEl = id => ({ id, disabled: false, offsetParent: {}, focused: false,
 const campi = ['a', 'b', 'c'].map(creaEl);
 const stato = { attivo: null, display: 'flex', listener: {}, indietro: 0, push: 0 };
 const modale = {
+  id: 'edit-modal',
   style: { get display() { return stato.display; }, set display(v) { stato.display = v; } },
   querySelectorAll: () => campi
 };
@@ -28,10 +29,10 @@ global.document = {
 global.history = { pushState: () => stato.push++, back: () => stato.indietro++ };
 global.window = { addEventListener: (t, fn) => { stato.listener['w:' + t] = fn; } };
 
-eval(['let _modaleOrigine = null;', 'let _modaleInHistory = false;',
+eval(['let _modaleOrigine = null;', 'let _modaleInHistory = false;', 'let _modaleAttivaId = null;',
       h.src.match(/const _FOCUSABILI = [^;]+;/)[0],
       h.estrai(h.src, '_elementiFocusabili'), h.estrai(h.src, 'apriModale'),
-      h.estrai(h.src, 'closeEditModal'), h.estrai(h.src, '_modaleKeydown')].join('\n'));
+      h.estrai(h.src, 'chiudiModaleAttiva'), h.estrai(h.src, 'closeEditModal'), h.estrai(h.src, '_modaleKeydown')].join('\n'));
 
 const origine = creaEl('origine');
 stato.attivo = origine; stato.display = 'flex';

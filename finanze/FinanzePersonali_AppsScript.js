@@ -44,6 +44,7 @@ const COLUMNS = {
   Entrate: ['ID', 'Data', 'Importo', 'Tipo', 'Nota', 'Conto'],
   Investimenti: ['Data_Snapshot', 'Piattaforma', 'Conto', 'Strumento', 'Valore_Attuale', 'Investito', 'Rendimento_EUR', 'Rendimento_PCT'],
   Budget: ['Categoria', 'Sottocategoria', 'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'],
+  Giroconti: ['ID', 'Data', 'Importo', 'Conto_Da', 'Conto_A', 'Nota'],
 };
 
 // ── Dati iniziali ────────────────────────────────────────────
@@ -396,6 +397,7 @@ function doGet(e) {
       case 'getSummary':      result = getSummary_(params);break;
       case 'getSummaryAnno':  result = getSummaryAnno_(params); break;
       case 'getBootstrap':    result = getBootstrap_(params);   break;
+      case 'getGiroconti':    result = getGiroconti_();          break;
       default:
         result = { error: 'Azione non riconosciuta: ' + action };
     }
@@ -425,6 +427,8 @@ function doPost(e) {
       case 'updateBudget':    result = updateBudget_(body);    break;
       case 'addCategoria':    result = addCategoria_(body);    break;
       case 'addConto':        result = addConto_(body);        break;
+      case 'addGiroconto':         result = addGiroconto_(body);         break;
+      case 'deleteGiroconto':      result = deleteGiroconto_(body);      break;
       case 'deleteRow':            result = deleteRow_(body);            break;
       case 'updateRow':            result = updateRow_(body);            break;
       case 'bulkImportSpese':      result = bulkImportSpese_(body);      break;
@@ -750,6 +754,7 @@ function getBootstrap_(params) {
         categorie:        safe_(function() { return getCategorie_().data; }, {}),
         categorieEntrate: safe_(function() { return getCategorieEntrate_().data; }, []),
         conti:            safe_(function() { return getConti_().data; }, []),
+        giroconti:        safe_(function() { return getGiroconti_().data; }, []),
         summaryAnno:      safe_(function() { return getSummaryAnno_({ year: annoTrend }).data; }, null),
         spese: spese,
         entrate: entrate,
@@ -897,6 +902,81 @@ function addConto_(body) {
   ]);
   invalidaAnagrafiche_();
   return { ok: true };
+}
+
+// ── Giroconti (FIN-9) ─────────────────────────────────────────
+// Un trasferimento tra conti non e' ne' spesa ne' entrata: vive in un foglio
+// dedicato, riga singola. File unico (non annuale): sono pochi e il saldo
+// derivato (FIN-10) li deve sommare tutti a prescindere dall'anno.
+
+/**
+ * Apre il foglio Giroconti, creandolo al primo uso se manca.
+ * @returns {Sheet}
+ */
+function getGirocontiSheet_() {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('ID_GIROCONTI');
+  if (id) {
+    try { return openById_(id).getSheets()[0]; } catch (e) { id = null; }
+  }
+  const rootIter = DriveApp.getFoldersByName(CONFIG.ROOT_FOLDER_NAME);
+  if (!rootIter.hasNext()) throw new Error('Cartella Finanza non trovata');
+  const ss = getOrCreateSpreadsheet_(rootIter.next(), 'Giroconti');
+  const sheet = ss.getSheets()[0];
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, COLUMNS.Giroconti.length).setValues([COLUMNS.Giroconti]);
+    formatHeader_(sheet, COLUMNS.Giroconti.length);
+    sheet.setFrozenRows(1);
+  }
+  props.setProperty('ID_GIROCONTI', ss.getId());
+  return sheet;
+}
+
+/**
+ * Legge tutti i giroconti.
+ * @returns {{ ok: boolean, data: Array }}
+ */
+function getGiroconti_() {
+  const sheet = getGirocontiSheet_();
+  const data  = sheet.getDataRange().getValues().slice(1).filter(r => r.some(c => c !== ''));
+  const rows = data.map(r => ({
+    id: r[0], data: r[1], importo: parseNum_(r[2]),
+    contoDa: r[3], contoA: r[4], nota: r[5]
+  }));
+  return { ok: true, data: rows };
+}
+
+/**
+ * Aggiunge un giroconto.
+ * @param {{ importo, contoDa, contoA, data, nota? }} body
+ * @returns {{ ok: boolean, id: string }}
+ */
+function addGiroconto_(body) {
+  if (!body.contoDa || !body.contoA) return { error: 'Conto di partenza e arrivo obbligatori' };
+  if (body.contoDa === body.contoA)  return { error: 'I due conti devono essere diversi' };
+  const importo = parseFloat(body.importo) || 0;
+  if (importo <= 0) return { error: 'Importo non valido' };
+  const sheet = getGirocontiSheet_();
+  const id = generateId_();
+  sheet.appendRow([id, body.data || '', importo, body.contoDa, body.contoA, body.nota || '']);
+  return { ok: true, id: id };
+}
+
+/**
+ * Elimina un giroconto per ID.
+ * @param {{ id: string }} body
+ * @returns {{ ok: boolean }}
+ */
+function deleteGiroconto_(body) {
+  const sheet = getGirocontiSheet_();
+  const data  = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(body.id)) {
+      sheet.deleteRow(i + 1);
+      return { ok: true };
+    }
+  }
+  return { error: 'Giroconto non trovato' };
 }
 
 /**

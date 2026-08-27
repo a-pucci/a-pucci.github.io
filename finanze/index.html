@@ -474,7 +474,10 @@
         <div id="donut-summary"></div>
       </div>
       <div class="card">
-        <div class="card-title">Conti & piattaforme</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+          <div class="card-title" style="margin:0">Conti & piattaforme</div>
+          <button onclick="apriGiroconto()" style="background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;padding:5px 10px;cursor:pointer;white-space:nowrap"><i class="ti ti-transfer" style="font-size:12px"></i> Giroconto</button>
+        </div>
         <div id="conti-list"><div class="skel" style="height:80px"></div></div>
       </div>
     </div>
@@ -930,7 +933,7 @@ async function fetchBootstrap() {
 
 // Popola l'intera interfaccia. Con `pre` usa quei dati, senza va in rete.
 async function idrata(pre) {
-  await Promise.all([loadCategorie(pre), loadConti(pre), loadSummaryAnno(pre)]);
+  await Promise.all([loadCategorie(pre), loadConti(pre), loadSummaryAnno(pre), loadGiroconti(pre)]);
   await loadPeriodo(pre);
   await loadInvestimenti(pre);
 }
@@ -1152,6 +1155,118 @@ async function loadSummaryAnno(pre) {
       renderTrendAnnoChart();
     }
   } catch(e) { console.warn('loadSummaryAnno:', e); }
+}
+
+// ── GIROCONTI (FIN-9) ────────────────────────────────────────
+let GIROCONTI = [];
+
+async function loadGiroconti(pre) {
+  try {
+    if (pre) { GIROCONTI = pre.giroconti || []; return; }
+    const res = await apiGet({ action: 'getGiroconti' });
+    if (res.ok) GIROCONTI = res.data || [];
+  } catch(e) {
+    if (!navigator.onLine) return;
+    console.warn('loadGiroconti:', e.message);
+  }
+}
+
+function _popolaSelectConti(sel, escludi) {
+  if (!sel) return;
+  const prev = sel.value;
+  const byTipo = CONTI.reduce((acc, c) => { (acc[c.tipo] = acc[c.tipo] || []).push(c); return acc; }, {});
+  sel.innerHTML = '<option value="">Conto...</option>' +
+    Object.entries(byTipo).map(([tipo, conti]) =>
+      `<optgroup label="${tipo}">${conti
+        .filter(c => c.nome !== escludi)
+        .map(c => `<option value="${c.nome}">${c.nome}</option>`).join('')}</optgroup>`
+    ).join('');
+  if (prev) sel.value = prev;
+}
+
+function apriGiroconto() {
+  const modal = document.getElementById('giro-modal');
+  if (!modal) return;
+  const imp = document.getElementById('giro-importo'); if (imp) imp.value = '';
+  const nota = document.getElementById('giro-nota');   if (nota) nota.value = '';
+  const data = document.getElementById('giro-data');   if (data) data.value = todayISO;
+  const err = document.getElementById('giro-err');     if (err) err.style.display = 'none';
+  _popolaSelectConti(document.getElementById('giro-da'), null);
+  _popolaSelectConti(document.getElementById('giro-a'), null);
+  const da = document.getElementById('giro-da'), a = document.getElementById('giro-a');
+  if (da) da.value = ''; if (a) a.value = '';
+  renderGirocontiList();
+  modal.style.display = 'flex';
+  apriModale(modal);
+}
+
+function chiudiGiroconto() { chiudiModaleAttiva(); }
+
+async function salvaGiroconto() {
+  const contoDa = document.getElementById('giro-da').value;
+  const contoA  = document.getElementById('giro-a').value;
+  const importo = parseFloat(document.getElementById('giro-importo').value);
+  const data    = document.getElementById('giro-data').value || todayISO;
+  const nota    = document.getElementById('giro-nota').value;
+
+  if (!importo || importo <= 0) { showMsg('giro-err', 'Inserisci un importo valido'); return; }
+  if (!contoDa || !contoA)      { showMsg('giro-err', 'Scegli conto di partenza e arrivo'); return; }
+  if (contoDa === contoA)       { showMsg('giro-err', 'I due conti devono essere diversi'); return; }
+
+  const btn = document.getElementById('giro-save-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Salvataggio...'; }
+  try {
+    const res = await apiPost({ action: 'addGiroconto', importo, contoDa, contoA, data, nota });
+    if (res.ok) {
+      await loadGiroconti();
+      renderGirocontiList();
+      renderContiList();   // i saldi derivati (FIN-10) cambieranno
+      const imp = document.getElementById('giro-importo'); if (imp) imp.value = '';
+      const nt = document.getElementById('giro-nota');     if (nt) nt.value = '';
+      toast('Giroconto registrato', { tipo: 'ok' });
+    } else { showMsg('giro-err', res.error || 'Errore'); }
+  } catch(err) { showMsg('giro-err', err.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Registra giroconto'; } }
+}
+
+async function deleteGiroconto(id) {
+  const idx = GIROCONTI.findIndex(g => String(g.id) === String(id));
+  if (idx === -1) return;
+  const riga = GIROCONTI[idx];
+  GIROCONTI.splice(idx, 1);
+  renderGirocontiList();
+  try {
+    const res = await apiPost({ action: 'deleteGiroconto', id });
+    if (!res.ok) throw new Error(res.error || 'impossibile eliminare');
+    renderContiList();
+    toast('Giroconto eliminato', { tipo: 'ok' });
+  } catch(err) {
+    GIROCONTI.splice(idx, 0, riga);   // ripristino: torna dov'era
+    renderGirocontiList();
+    toast('Eliminazione non riuscita: ' + err.message, { tipo: 'err', durata: 6000 });
+  }
+}
+
+function renderGirocontiList() {
+  const el = document.getElementById('giro-list');
+  if (!el) return;
+  if (!GIROCONTI.length) { el.innerHTML = '<div class="empty" style="padding:8px 0">Nessun giroconto registrato</div>'; return; }
+  const recenti = [...GIROCONTI].sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 8);
+  el.innerHTML = '<div class="card-title" style="font-size:11px;margin-bottom:6px">Ultimi giroconti</div>' +
+    recenti.map(g => {
+      const d = new Date(g.data);
+      const quando = isNaN(d) ? '' : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+      return `<div class="row">
+        <div style="min-width:0">
+          <div class="name" style="font-size:13px">${g.contoDa} → ${g.contoA}</div>
+          <div class="sub">${g.nota ? g.nota + ' · ' : ''}${quando}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="amt">€${fmtDec(g.importo)}</span>
+          <button class="del-btn" onclick="deleteGiroconto('${g.id}')" aria-label="Elimina giroconto" title="Elimina">✕</button>
+        </div>
+      </div>`;
+    }).join('');
 }
 
 function renderContiList() {
@@ -1830,8 +1945,11 @@ function _elementiFocusabili(modal) {
     .filter(el => !el.disabled && el.offsetParent !== null);
 }
 
+let _modaleAttivaId = null;   // quale modale ha il focus, per riuso su piu' modali
+
 function apriModale(modal) {
   _modaleOrigine = document.activeElement;
+  _modaleAttivaId = modal.id;
   // Voce di history dedicata: su Android il tasto indietro chiude la modale
   // invece di uscire dall'app.
   history.pushState({ modale: true }, '');
@@ -1841,11 +1959,13 @@ function apriModale(modal) {
   if (focusabili.length) focusabili[0].focus();
 }
 
-function closeEditModal(daHistory) {
-  const modal = document.getElementById('edit-modal');
+// Chiude la modale attualmente attiva, qualunque sia.
+function chiudiModaleAttiva(daHistory) {
+  const modal = _modaleAttivaId && document.getElementById(_modaleAttivaId);
   if (!modal || modal.style.display === 'none') return;
   modal.style.display = 'none';
   document.removeEventListener('keydown', _modaleKeydown, true);
+  _modaleAttivaId = null;
 
   if (_modaleInHistory) {
     _modaleInHistory = false;
@@ -1856,16 +1976,19 @@ function closeEditModal(daHistory) {
   _modaleOrigine = null;
 }
 
+// Nome storico mantenuto per gli onclick nel markup della modale di modifica.
+function closeEditModal(daHistory) { chiudiModaleAttiva(daHistory); }
+
 window.addEventListener('popstate', () => {
-  if (_modaleInHistory) closeEditModal(true);
+  if (_modaleInHistory) chiudiModaleAttiva(true);
 });
 
 // Esc chiude; Tab resta dentro la modale, altrimenti si finisce a navigare la
 // pagina sottostante senza vederla.
 function _modaleKeydown(e) {
-  if (e.key === 'Escape') { e.preventDefault(); closeEditModal(); return; }
+  if (e.key === 'Escape') { e.preventDefault(); chiudiModaleAttiva(); return; }
   if (e.key !== 'Tab') return;
-  const modal = document.getElementById('edit-modal');
+  const modal = _modaleAttivaId && document.getElementById(_modaleAttivaId);
   if (!modal || modal.style.display === 'none') return;
   const focusabili = _elementiFocusabili(modal);
   if (!focusabili.length) return;
@@ -2975,6 +3098,38 @@ document.addEventListener('DOMContentLoaded', () => {
       <i class="ti ti-check"></i> Salva modifiche
     </button>
     <div class="msg err" id="edit-err"></div>
+  </div>
+</div>
+
+<div id="giro-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)chiudiGiroconto()">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="giro-modal-title">
+    <div class="modal-header">
+      <div class="card-title" id="giro-modal-title" style="margin:0">Giroconto tra conti</div>
+      <button class="del-btn" onclick="chiudiGiroconto()" aria-label="Chiudi" style="opacity:1;font-size:18px">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--hint);margin-bottom:12px;line-height:1.5">
+      Sposta denaro tra due conti. Non conta come spesa né come entrata.
+    </div>
+    <div class="amount-row">
+      <span class="euro">€</span>
+      <input type="number" id="giro-importo" placeholder="0,00" step="0.01" inputmode="decimal" />
+    </div>
+    <div class="form-row" style="margin-top:10px"><label>Da</label>
+      <select id="giro-da"><option value="">Conto di partenza...</option></select>
+    </div>
+    <div class="form-row"><label>A</label>
+      <select id="giro-a"><option value="">Conto di arrivo...</option></select>
+    </div>
+    <input type="text" id="giro-nota" placeholder="Nota (opzionale)" style="margin-bottom:8px" />
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <i class="ti ti-calendar" style="font-size:14px;color:var(--hint)"></i>
+      <input type="date" id="giro-data" style="flex:1;min-height:36px;font-size:14px" />
+    </div>
+    <button class="btn-primary" id="giro-save-btn" onclick="salvaGiroconto()">
+      <i class="ti ti-check"></i> Registra giroconto
+    </button>
+    <div class="msg err" id="giro-err"></div>
+    <div id="giro-list" style="margin-top:16px"></div>
   </div>
 </div>
 <script>
