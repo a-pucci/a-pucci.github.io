@@ -10,7 +10,7 @@ const APP_PAGE     = '/finanze/';
 const HEADER_LOGIN = 'x-finanze-auth';   // il Worker puo' valorizzarlo 'login'
 const APP_MARKER   = 'id="app"';         // presente solo nella pagina vera
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbwCuSYyUW2z6dTkX2OtthwR0WtRkz_hClei4LaL3ebwUcRAEWMAVrSp5DnN-5snbKJf/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyEtyYA_ctc5tGV14gradnArVN7rg3yFRs97UXlJ5k93kUkXTciG2gL3lV1JpglCyQ_/exec';
 
 const APP_SHELL = [
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js',
