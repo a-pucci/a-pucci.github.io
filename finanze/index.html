@@ -297,7 +297,17 @@
   @media (prefers-reduced-motion: reduce) { .in-caricamento { transition: none; } }
 
   /* Operazioni in coda offline: senza contatore non si sa se e quante siano. */
-  #coda-badge { display: none; align-items: center; gap: 4px; margin-left: 6px;
+  /* Ricerca globale attiva: si nascondono le viste del mese e si mostra il pannello
+     risultati multi-mese (FIN-19). Reversibile togliendo la classe. */
+  #tab-spese.ricerca-on .view-toggle,
+  #tab-spese.ricerca-on #view-cat,
+  #tab-spese.ricerca-on #view-subcat,
+  #tab-spese.ricerca-on #view-list,
+  #tab-spese.ricerca-on #dist-card { display: none !important; }
+  #tab-spese.ricerca-on #search-results { display: block !important; }
+  .search-periodo { font-family: var(--mono); font-size: 10px; color: var(--hint);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+    #coda-badge { display: none; align-items: center; gap: 4px; margin-left: 6px;
     padding: 1px 7px; border-radius: 999px; background: var(--amber);
     color: #0f0f0f; font-size: 0.7rem; font-weight: 600; font-family: var(--mono); }
 
@@ -534,7 +544,10 @@
         <input id="f-max" type="number" placeholder="Max €" style="width:70px" min="0" step="0.01" oninput="applyFilters()">
         <button id="f-reset" onclick="resetFilters()" style="color:var(--muted);background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;cursor:pointer;font-size:12px;transition:color .15s">✕ Reset</button>
       </div>
-      <div id="f-count" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap">
+        <div id="f-count" style="font-size:11px;color:var(--muted)"></div>
+        <button id="search-global-btn" onclick="cercaGlobale()" style="display:none;background:var(--accent-bg);border:1px solid rgba(201,245,66,0.3);color:var(--accent);font-size:11px;padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer"></button>
+      </div>
     </div>
 
     <div class="view-toggle">
@@ -556,7 +569,15 @@
       <div id="tx-list"><div class="empty">Caricamento...</div></div>
     </div>
 
-    <div class="card">
+    <div id="search-results" class="card" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="card-title" id="search-results-title" style="margin:0">Risultati</div>
+        <button onclick="chiudiRicerca()" aria-label="Chiudi ricerca" style="background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);font-size:12px;padding:5px 10px;cursor:pointer">✕ Chiudi</button>
+      </div>
+      <div id="search-results-list"></div>
+    </div>
+
+    <div class="card" id="dist-card">
       <div class="card-title">Distribuzione spese</div>
       <div class="distribuzione-wrap" id="spesa-chart-wrap">
         <div style="position:relative;width:180px;height:180px;flex-shrink:0">
@@ -1295,7 +1316,9 @@ function filtraPeriodo(rows, p) {
 // coincide col mese solare: il 5 maggio, con inizio il 16, sta nel periodo di
 // aprile.
 function periodoDi(dataISO) {
-  const [y, m, d] = String(dataISO).split('-').map(Number);
+  // La data puo' arrivare date-only ("2026-05-20"), come oggetto Date, o come ISO
+  // completo dal backend ("2026-05-20T22:00:00.000Z"): si normalizza a date-only.
+  const [y, m, d] = snapDateISO(dataISO).split('-').map(Number);
   if (!y || !m || !d) return { year: currentYear, month: currentMonth };
   if (monthStartDay <= 1) return { year: y, month: m };
   return d >= monthStartDay ? { year: y, month: m } : shiftMonth(y, m, -1);
@@ -1395,8 +1418,10 @@ function renderSpeseMetrics() {
     <div class="metric"><div class="label">Media spesa</div><div class="value">${regSpese.length?'€'+fmtDec(avg):'—'}</div></div>`;
 }
 
-function getFilteredSpese() {
-  return currentSpese.filter(e => {
+// Applica i filtri attivi a un pool qualsiasi di spese. Usato sia sul mese corrente
+// (getFilteredSpese) sia sul pool multi-mese della ricerca globale (FIN-19).
+function filtraSpese(pool) {
+  return pool.filter(e => {
     if (activeFilters.q) {
       const q = activeFilters.q.toLowerCase();
       if (!(e.nota||'').toLowerCase().includes(q) &&
@@ -1408,6 +1433,10 @@ function getFilteredSpese() {
     if (activeFilters.maxAmt !== null && e.importo > activeFilters.maxAmt) return false;
     return true;
   });
+}
+
+function getFilteredSpese() {
+  return filtraSpese(currentSpese);
 }
 
 function applyFilters() {
@@ -1440,6 +1469,9 @@ function applyFilters() {
   if (resetBtn) {
     resetBtn.style.color = hasFilter ? 'var(--accent)' : 'var(--muted)';
   }
+
+  aggiornaPulsanteRicerca();
+  if (ricercaAttiva) mostraRisultatiRicerca();   // ri-filtra il pool multi-mese dal vivo
 }
 
 function resetFilters() {
@@ -1453,6 +1485,102 @@ function resetFilters() {
   if (fmn) fmn.value = '';
   if (fmx) fmx.value = '';
   applyFilters();
+}
+
+// ── RICERCA GLOBALE MULTI-MESE (FIN-19) ──────────────────────
+// I filtri normali agiscono sul solo mese caricato. La ricerca globale scarica
+// gli anni interi (corrente e precedente) e filtra li'. Parte solo su click
+// esplicito, quindi non tocca i tempi di avvio.
+const _RICERCA_ANNI = () => [THIS_YEAR, THIS_YEAR - 1];
+let _ricercaCache = {};   // year -> Array<spesa>, per l'intera esecuzione
+let _ricercaPool  = [];   // pool su cui filtrare e da cui aprire la modifica
+let ricercaAttiva = false;
+
+// Mostra il pulsante solo quando c'e' testo da cercare: categoria e importo da
+// soli restano sul mese, dove la ricerca globale non aggiungerebbe nulla di utile.
+function aggiornaPulsanteRicerca() {
+  const btn = document.getElementById('search-global-btn');
+  if (!btn) return;
+  if (activeFilters.q) {
+    const anni = _RICERCA_ANNI();
+    btn.style.display = '';
+    btn.textContent = ricercaAttiva
+      ? '↻ Aggiorna ricerca'
+      : `Cerca in tutti i mesi (${anni[anni.length - 1]}–${anni[0]})`;
+  } else {
+    btn.style.display = 'none';
+    if (ricercaAttiva) chiudiRicerca();
+  }
+}
+
+async function cercaGlobale() {
+  if (!activeFilters.q) return;
+  const btn = document.getElementById('search-global-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Ricerca…'; }
+  try {
+    const anni = _RICERCA_ANNI();
+    const mancanti = anni.filter(y => !_ricercaCache[y]);
+    if (mancanti.length) {
+      const res = await Promise.all(mancanti.map(y => apiGet({ action: 'getSpese', year: y })));
+      mancanti.forEach((y, i) => { if (res[i] && res[i].ok) _ricercaCache[y] = res[i].data || []; });
+    }
+    _ricercaPool = anni.flatMap(y => _ricercaCache[y] || []);
+    ricercaAttiva = true;
+    mostraRisultatiRicerca();
+  } catch (e) {
+    toast('Ricerca non riuscita: ' + e.message, { tipo: 'err', durata: 6000 });
+  } finally {
+    if (btn) btn.disabled = false;
+    aggiornaPulsanteRicerca();
+  }
+}
+
+function mostraRisultatiRicerca() {
+  const tab  = document.getElementById('tab-spese');
+  const list = document.getElementById('search-results-list');
+  const titleEl = document.getElementById('search-results-title');
+  if (!tab || !list) return;
+  tab.classList.add('ricerca-on');
+  const risultati = filtraSpese(_ricercaPool).sort((a, b) => new Date(b.data) - new Date(a.data));
+  if (titleEl) titleEl.textContent = `${risultati.length} risultati · «${activeFilters.q}»`;
+  if (!risultati.length) { list.innerHTML = '<div class="empty">Nessun movimento trovato</div>'; return; }
+  const MAX = 200;
+  list.innerHTML = risultati.slice(0, MAX).map(e => {
+    const color = CATS[e.categoria] && CATS[e.categoria].color || '#888680';
+    const per = periodoDi(e.data);
+    const periodoLbl = MONTHS_SHORT[per.month - 1] + ' ' + per.year;
+    const d = new Date(e.data);
+    const year = e.data ? e.data.slice(0, 4) : currentYear;
+    return `<div class="row">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <span class="cat-dot" style="background:${color}"></span>
+        <div style="min-width:0">
+          <div class="name">${e.nota || e.sottocategoria || e.categoria}</div>
+          <div class="sub">${e.categoria}${e.sottocategoria ? ' › ' + e.sottocategoria : ''} · ${d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="search-periodo">${periodoLbl}</span>
+        <span class="amt">€${fmtDec(e.importo)}</span>
+        <button class="edit-btn" onclick="openEditMovimento('spese','${e.id}','${year}')" aria-label="Modifica movimento" title="Modifica">✎</button>
+      </div>
+    </div>`;
+  }).join('') + (risultati.length > MAX ? `<div class="empty">…primi ${MAX} di ${risultati.length}. Restringi la ricerca.</div>` : '');
+}
+
+function chiudiRicerca() {
+  ricercaAttiva = false;
+  const tab = document.getElementById('tab-spese');
+  if (tab) tab.classList.remove('ricerca-on');
+  aggiornaPulsanteRicerca();
+}
+
+// Dopo una modifica o eliminazione, il pool multi-mese e' potenzialmente stantio:
+// si svuota la cache e, se la ricerca e' aperta, si rilegge.
+function invalidaRicerca() {
+  _ricercaCache = {};
+  if (ricercaAttiva && activeFilters.q) cercaGlobale();
+  else { ricercaAttiva = false; aggiornaPulsanteRicerca(); }
 }
 
 function buildCatTotals() {
@@ -1566,7 +1694,7 @@ function renderTxList() {
 // un dialogo di conferma ci si difende male: si tocca "OK" per riflesso. Qui si
 // elimina subito e si lascia l'annullamento a portata di pollice.
 function _renderDopoMutazione(sheetKey) {
-  if (sheetKey === 'spese') applyFilters();
+  if (sheetKey === 'spese') { applyFilters(); invalidaRicerca(); }
   renderEntrate();      // il risparmio dipende da entrambi i dataset
   renderPanoramica();   // e le metriche di Panoramica dagli stessi totali
 }
@@ -1641,7 +1769,9 @@ function openEditMovimento(sheetKey, id, year) {
   const titleEl     = document.getElementById('edit-modal-title');
 
   if (sheetKey === 'spese') {
-    const item = currentSpese.find(r => String(r.id) === String(id));
+    // Dalla ricerca globale il movimento puo' non essere nel mese caricato.
+    const item = currentSpese.find(r => String(r.id) === String(id))
+              || _ricercaPool.find(r => String(r.id) === String(id));
     if (!item) return;
     titleEl.textContent = 'Modifica spesa';
     spesaForm.style.display = '';
@@ -1780,7 +1910,7 @@ async function saveEditMovimento() {
     const res = await apiPost(body);
     if (res.ok) {
       closeEditModal();
-      if (_editSheetKey === 'spese') await loadSpese();
+      if (_editSheetKey === 'spese') { await loadSpese(); invalidaRicerca(); }
       else await loadEntrate();
     } else {
       showMsg('edit-err', res.error || 'Errore durante la modifica');
@@ -2161,6 +2291,7 @@ async function addSpesa() {
           }, 1800);
         }
         await loadSpese();
+        invalidaRicerca();
         avvisaSePeriodoDiverso(data);
       }
     } else { showMsg('spesa-err', res.error || 'Errore'); }

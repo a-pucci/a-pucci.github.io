@@ -14,7 +14,7 @@ let notifiche = [];
 global.toast = (testo, o) => { notifiche.push({ testo, azione: o && o.azione, onAzione: o && o.onAzione }); };
 global.loadPeriodo = () => { notifiche.push({ ricaricato: true }); };
 
-eval([h.estrai(h.src, 'localISO'), h.estrai(h.src, 'getMonthRange'),
+eval([h.estrai(h.src, 'localISO'), h.estrai(h.src, 'snapDateISO'), h.estrai(h.src, 'getMonthRange'),
       h.estrai(h.src, 'monthRangeLabel'), h.estrai(h.src, 'shiftMonth'),
       h.estrai(h.src, 'periodoDi'), h.estrai(h.src, 'avvisaSePeriodoDiverso')].join('\n'));
 
@@ -40,6 +40,11 @@ verifica('  il 20 gennaio sta in gennaio 2026', periodoDi('2026-01-20'), { year:
 contesto(2026, 5, 1);
 verifica('data non valida -> periodo corrente', periodoDi(''), { year: 2026, month: 5 });
 verifica('data indefinita -> periodo corrente', periodoDi(undefined), { year: 2026, month: 5 });
+// il backend serializza le date come ISO completo: non deve NaN-are e cadere sul corrente
+verifica('data ISO con orario risolta correttamente',
+  periodoDi('2026-01-15T23:00:00.000Z'), { year: 2026, month: 1 });
+verifica('oggetto Date risolto correttamente',
+  periodoDi(new Date(2026, 2, 10)), { year: 2026, month: 3 });
 
 sezione('coerenza col filtro delle viste');
 // L'avviso non deve poter dissentire dal filtro che decide cosa e' visibile.
